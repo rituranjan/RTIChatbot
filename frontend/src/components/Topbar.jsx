@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { planLabel } from "../plans";
 
-export default function Topbar({ user, theme, setTheme, onLogout }) {
+export default function Topbar({ user, actingId, theme, setTheme, onLogout }) {
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
@@ -23,20 +23,24 @@ export default function Topbar({ user, theme, setTheme, onLogout }) {
       cancelled = true;
       clearInterval(t);
     };
-  }, []);
+  }, [actingId]);
 
   const provider =
-    status?.provider === "openai" || status?.provider === "chatgpt"
+    status?.provider === "openrouter"
+      ? "OpenRouter"
+      : status?.provider === "openai" || status?.provider === "chatgpt"
       ? "ChatGPT"
       : status?.provider === "azure"
       ? "Azure"
       : status?.provider === "ollama"
       ? "Ollama"
       : status?.provider || "model";
+  const model = status?.chat_model || "";
+  const shortModel = model.includes(":") ? model.split(":").slice(1).join(":").trim() : model;
   const label = !status
     ? "Checking model…"
     : status.available
-    ? `${provider} · ${status.chat_model}`
+    ? `${provider} · ${shortModel || model}`
     : `${provider} offline`;
 
   return (

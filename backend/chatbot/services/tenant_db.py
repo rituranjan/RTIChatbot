@@ -147,12 +147,31 @@ def _drop_postgres(name: str) -> None:
         connection.close()
 
 
+_prepared = set()
+
+
 def ensure_schema(alias: str) -> None:
+    from django.db.utils import OperationalError
+
     existing = set(connections[alias].introspection.table_names())
     with connections[alias].schema_editor() as editor:
         for model in (Conversation, Message, VisitorProfile):
-            if model._meta.db_table not in existing:
+            if model._meta.db_table in existing:
+                continue
+            try:
                 editor.create_model(model)
+            except OperationalError as exc:
+                if "already exists" not in str(exc).lower():
+                    raise
+
+
+def prepare_database(profile) -> str:
+    """Open the account database and create chat tables when the file is empty."""
+    alias = register_database(profile)
+    if alias not in _prepared:
+        ensure_schema(alias)
+        _prepared.add(alias)
+    return alias
 
 
 def _stamp(model, alias, pk, created_at, updated_at=None):
@@ -214,8 +233,7 @@ def provision_tenant(user, plan=None) -> UserProfile:
     try:
         if profile.engine == "postgresql":
             _create_postgres(profile.database_name)
-        alias = register_database(profile)
-        ensure_schema(alias)
+        alias = prepare_database(profile)
         if not profile.migrated:
             move_chats_to_tenant(user, alias)
             profile.migrated = True
@@ -230,6 +248,7 @@ def provision_tenant(user, plan=None) -> UserProfile:
 
 def close_alias(profile) -> None:
     alias = alias_for(profile)
+    _prepared.discard(alias)
     try:
         connections[alias].close()
     except Exception:
@@ -262,7 +281,7 @@ def use_tenant(user):
     previous = current_alias()
     profile = UserProfile.objects.filter(user=user).first() if user is not None else None
     if profile is not None and profile.ready:
-        set_alias(register_database(profile))
+        set_alias(prepare_database(profile))
     else:
         set_alias(None)
     try:

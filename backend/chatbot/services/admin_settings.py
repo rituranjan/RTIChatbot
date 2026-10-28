@@ -142,12 +142,22 @@ def settings_payload(viewer=None) -> dict:
         serialize_account(user, profiles.get(user.id), messages.get(user.id, ""), viewer)
         for user in get_user_model().objects.order_by("username")
     ]
+    from django.conf import settings as django_settings
+
+    from .plan_access import llm_policy, mail_public, merged_access
+
+    stored_key = bool((config.openrouter_api_key or "").strip())
     return {
         "retention_days": config.retention_days,
         "plans": plan_schedule(config),
+        "plan_access": merged_access(config),
+        "llm_policy": llm_policy(),
         "database_mode": "postgresql" if postgres_enabled() else "sqlite",
         "not_found_message": config.not_found_message,
         "last_purge_at": config.last_purge_at,
+        "openrouter_configured": stored_key or bool(django_settings.OPENROUTER_API_KEY),
+        "openrouter_source": "settings" if stored_key else ("environment" if django_settings.OPENROUTER_API_KEY else ""),
+        "mail": mail_public(config),
         "users": users,
     }
 
@@ -162,7 +172,15 @@ def save_settings(data, viewer=None) -> dict:
         if days < 0 or days > 3650:
             raise ValueError("Days must be between 0 and 3650. Use 0 to turn deletion off.")
         config.retention_days = days
-    if "plans" in data:
+    if "plan_access" in data:
+        from .plan_access import clean_plan_access
+
+        access = clean_plan_access(data.get("plan_access"))
+        config.plan_access = access
+        config.plan_days = {key: access[key]["days"] for key in access}
+    elif "plans" in data:
+        from .plan_access import merged_access
+
         incoming = data.get("plans")
         if not isinstance(incoming, dict):
             raise ValueError("Enter a number of days for each plan.")
@@ -178,11 +196,51 @@ def save_settings(data, viewer=None) -> dict:
                 raise ValueError("Days must be between 0 and 3650. Use 0 to turn deletion off.")
             schedule[key] = days
         config.plan_days = schedule
+        access = merged_access(config)
+        for key in schedule:
+            access[key]["days"] = schedule[key]
+        config.plan_access = access
+    if data.get("clear_openrouter_key"):
+        config.openrouter_api_key = ""
+    elif "openrouter_api_key" in data:
+        key = str(data.get("openrouter_api_key") or "").strip()
+        if key:
+            if len(key) > 300 or any(char.isspace() for char in key):
+                raise ValueError("Paste the OpenRouter API key without spaces.")
+            config.openrouter_api_key = key
+    if "mail" in data:
+        from .plan_access import clean_mail
+
+        config.mail_settings = clean_mail(data.get("mail"), config)
     if "not_found_message" in data:
         message = str(data.get("not_found_message") or "").strip()
         if not message:
             raise ValueError("Enter the sentence to show when no information is found.")
         config.not_found_message = message[:2000]
+    if "llm_policy" in data:
+        from ..models import default_llm_policy
+
+        incoming = data.get("llm_policy")
+        if not isinstance(incoming, dict):
+            raise ValueError("Enter LLM fallback settings.")
+        base = default_llm_policy()
+        try:
+            base["default_max_output_tokens"] = max(
+                1, min(8192, int(incoming.get("default_max_output_tokens") or base["default_max_output_tokens"]))
+            )
+        except (TypeError, ValueError):
+            raise ValueError("Default max output tokens must be a whole number.")
+        try:
+            base["default_max_input_tokens_per_request"] = max(
+                0, int(incoming.get("default_max_input_tokens_per_request") or 0)
+            )
+        except (TypeError, ValueError):
+            raise ValueError("Default max input tokens per request must be a whole number.")
+        policy = str(incoming.get("missing_plan_policy") or base["missing_plan_policy"]).strip().lower()
+        if policy not in ("defaults", "block"):
+            raise ValueError("Missing plan policy must be defaults or block.")
+        base["missing_plan_policy"] = policy
+        config.llm_policy = base
     config.save()
 
     users = data.get("users")
@@ -199,10 +257,14 @@ def save_settings(data, viewer=None) -> dict:
             if user is None:
                 continue
             message = str(item.get("not_found_message") or "").strip()[:2000]
+            existing = UserChatSetting.objects.filter(user=user).first()
             if message:
                 UserChatSetting.objects.update_or_create(
                     user=user, defaults={"not_found_message": message}
                 )
-            else:
-                UserChatSetting.objects.filter(user=user).delete()
+            elif existing and existing.selected_model:
+                existing.not_found_message = ""
+                existing.save(update_fields=["not_found_message"])
+            elif existing:
+                existing.delete()
     return settings_payload(viewer)

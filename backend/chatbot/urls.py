@@ -2,6 +2,8 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .embed_views import EmbedChatView, EmbedConfigView, EmbedProfileView, MyEmbedBotView
+from .error_views import ClientErrorView, ErrorEventListView, ErrorScreenshotView
+from .prompt_views import AdminLlmUsageView, AdminPromptActivateView, AdminPromptDetailView, AdminPromptListView
 from .knowledge_views import (
     DataConnectionViewSet,
     InsightsView,
@@ -9,7 +11,7 @@ from .knowledge_views import (
     SqlKeywordQueryViewSet,
 )
 from .account_views import AccountDetailView, AccountListView, AccountProvisionView, ActAsView
-from .settings_views import AdminPurgeView, AdminSettingsView
+from .settings_views import AdminPurgeView, AdminSettingsView, MyPlanView, OpenRouterModelsView
 from .website_views import WebSourceViewSet
 from .views import (
     ChatView,
@@ -48,8 +50,17 @@ urlpatterns = [
     path("embed/<uuid:bot_id>/profile/", EmbedProfileView.as_view()),
     path("embed/<uuid:bot_id>/chat/", EmbedChatView.as_view()),
     path("insights/", InsightsView.as_view()),
+    path("client-errors/", ClientErrorView.as_view()),
+    path("admin-settings/errors/", ErrorEventListView.as_view()),
+    path("admin-settings/errors/<uuid:error_id>/screenshot/", ErrorScreenshotView.as_view()),
+    path("admin-settings/prompts/", AdminPromptListView.as_view()),
+    path("admin-settings/prompts/<slug:slug>/", AdminPromptDetailView.as_view()),
+    path("admin-settings/prompts/<slug:slug>/activate/", AdminPromptActivateView.as_view()),
+    path("admin-settings/usage/", AdminLlmUsageView.as_view()),
     path("admin-settings/", AdminSettingsView.as_view()),
+    path("admin-settings/models/", OpenRouterModelsView.as_view()),
     path("admin-settings/purge/", AdminPurgeView.as_view()),
+    path("my-plan/", MyPlanView.as_view()),
     path("admin/accounts/", AccountListView.as_view()),
     path("admin/accounts/<int:user_id>/", AccountDetailView.as_view()),
     path("admin/accounts/<int:user_id>/provision/", AccountProvisionView.as_view()),

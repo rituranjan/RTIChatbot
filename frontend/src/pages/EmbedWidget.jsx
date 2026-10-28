@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import IntakeForm from "../components/IntakeForm";
+import { reportUiError } from "../reportUiError";
 
 let memoryVisitor = "";
 
@@ -76,13 +77,20 @@ export default function EmbedWidget({ botId, mode }) {
     fetch(`/api/embed/${botId}/?visitor_id=${encodeURIComponent(visitor)}`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || "Chatbot not found.");
+        if (!res.ok) {
+          const failure = new Error(data.detail || "Chatbot not found.");
+          failure.status = res.status;
+          throw failure;
+        }
         setBot(data);
         setMessages(data.messages || []);
         setQuestions(data.questions || []);
         setProfile(data.profile);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => {
+        setError(err.message);
+        if (!err.status || err.status >= 500) reportUiError(err);
+      });
   }, [botId]);
 
   useEffect(() => {
@@ -106,10 +114,15 @@ export default function EmbedWidget({ botId, mode }) {
         body: JSON.stringify({ visitor_id: visitorId(), message }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || "The assistant could not reply.");
+      if (!res.ok) {
+        const failure = new Error(data.detail || "The assistant could not reply.");
+        failure.status = res.status;
+        throw failure;
+      }
       setMessages((current) => [...current, data.message]);
     } catch (err) {
       setError(err.message);
+      if (!err.status || err.status >= 500) reportUiError(err);
     } finally {
       setBusy(false);
       inputRef.current?.focus();

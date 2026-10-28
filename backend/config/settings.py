@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -45,6 +46,8 @@ def reload_runtime_env():
         "OLLAMA_TIMEOUT": int(env("OLLAMA_TIMEOUT", "300")),
         "OLLAMA_CONNECT_TIMEOUT": int(env("OLLAMA_CONNECT_TIMEOUT", "5")),
         "OLLAMA_BASE_URL": env("OLLAMA_BASE_URL", "http://ollama:11434"),
+        "OPENROUTER_API_KEY": env("OPENROUTER_API_KEY", ""),
+        "OPENROUTER_BASE_URL": env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
     }
     globals().update(values)
     from django.conf import settings as django_settings
@@ -74,6 +77,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "chatbot.middleware.ErrorRecordMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -106,12 +110,21 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+_TESTING = "test" in sys.argv
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": env("DJANGO_DB_PATH", str(BASE_DIR / "db.sqlite3")),
     }
 }
+_data_root = Path(DATABASES["default"]["NAME"]).parent
+_on_volume = str(DATABASES["default"]["NAME"]).replace("\\", "/").startswith("/data")
+if not _TESTING:
+    DATABASES["admin"] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": env("ADMIN_DB_PATH", str(_data_root / "admin.sqlite3")),
+    }
 DATABASE_ROUTERS = ["chatbot.tenant_router.TenantRouter"]
 
 TENANT_PG_HOST = env("TENANT_PG_HOST", "")
@@ -119,7 +132,14 @@ TENANT_PG_PORT = env("TENANT_PG_PORT", "5432")
 TENANT_PG_USER = env("TENANT_PG_USER", "postgres")
 TENANT_PG_PASSWORD = env("TENANT_PG_PASSWORD", "")
 TENANT_PG_MAINTENANCE_DB = env("TENANT_PG_MAINTENANCE_DB", "postgres")
-TENANT_DB_DIR = env("TENANT_DB_DIR", str(BASE_DIR / "tenants"))
+TENANT_DB_DIR = env(
+    "TENANT_DB_DIR",
+    str(_data_root / "tenants") if _on_volume else str(BASE_DIR / "tenants"),
+)
+ERROR_SCREENSHOT_DIR = env(
+    "ERROR_SCREENSHOT_DIR",
+    str(_data_root / "error_screenshots") if _on_volume else str(BASE_DIR / "error_screenshots"),
+)
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -148,6 +168,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "chatbot.services.error_log.api_exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
@@ -220,6 +241,8 @@ OPENAI_API_KEY = env("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = env("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", "") or env("MODEL_NAME", "gpt-4o-mini")
 OPENAI_EMBEDDING_MODEL = env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+OPENROUTER_API_KEY = env("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 
 DATABASE_CONTEXT_LIMIT = int(env("DATABASE_CONTEXT_LIMIT", "20"))
 

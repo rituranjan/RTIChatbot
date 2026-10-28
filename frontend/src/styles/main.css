@@ -852,9 +852,11 @@ html.embed-page #root {
   border-radius: 12px;
   padding: 6px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+  z-index: 8;
 }
 .nav-menu:hover .nav-sub,
-.nav-menu:focus-within .nav-sub {
+.nav-menu:focus-within .nav-sub,
+.nav-sub.open {
   display: flex;
   flex-direction: column;
 }
@@ -1055,6 +1057,54 @@ html.embed-page #root {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.admin-console {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  column-gap: 18px;
+}
+.admin-console > .studio-head,
+.admin-console > .settings-banner,
+.admin-console > .modal-back {
+  grid-column: 1 / -1;
+}
+.settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+}
+.admin-console > form {
+  min-width: 0;
+}
+.settings-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-weight: 650;
+}
+.settings-menu button small {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted);
+}
+.settings-menu button.active {
+  background: var(--accent);
+  color: white;
+  border-color: transparent;
+}
+.settings-menu button.active small {
+  color: rgba(255, 255, 255, 0.82);
+}
 .admin-tabs {
   display: inline-flex;
   gap: 4px;
@@ -1083,11 +1133,181 @@ html.embed-page #root {
   color: var(--muted);
   font-size: 13px;
 }
-.plan-grid {
+.plan-grid,
+.limit-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-bottom: 14px;
+}
+.plan-workspace {
+  margin-bottom: 14px;
+}
+.plan-switch {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.plan-switch button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 14px;
+  min-width: 108px;
+}
+.plan-switch button small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.plan-switch button.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.model-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow: auto;
+  margin: 8px 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.model-checklist label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px;
+  border-radius: 8px;
+}
+.model-checklist label.checked {
+  background: var(--bg-3);
+}
+.model-checklist input {
+  width: auto;
+  margin-top: 3px;
+  padding: 0;
+}
+.model-checklist span,
+.model-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-checklist small,
+.model-choice-text small {
+  color: var(--muted);
+}
+.model-search {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 8px;
+}
+.model-search .grow { flex: 1; }
+.field-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.model-chip {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.model-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+  margin-bottom: 8px;
+}
+.model-choices button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.model-choices small {
+  color: var(--muted);
+}
+.model-add {
+  display: flex;
+  gap: 8px;
+}
+.model-add input { flex: 1; }
+.model-picks { margin-top: 8px; }
+.model-page {
+  max-width: 440px;
+  padding-top: 18px;
+}
+.model-page h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+}
+.model-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.model-card .field {
+  flex: 1;
+  min-width: 0;
+}
+.model-card .primary {
+  height: 42px;
+  white-space: nowrap;
+}
+.usage-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.usage-meter { margin: 10px 0 14px; }
+.usage-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.usage-track {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.usage-track div {
+  height: 100%;
+  background: var(--accent);
+}
+.check-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 .plan-card {
   background: var(--bg-2);
@@ -1207,6 +1427,27 @@ button.danger:disabled {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 .modal-card h2 { margin: 0; }
+.issue-panel { min-width: 0; }
+.issue-scroll { overflow-x: auto; }
+.issue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.issue-table th,
+.issue-table td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+}
+.issue-table small { display: block; color: var(--muted); margin-top: 3px; word-break: break-all; }
+.issue-stack {
+  max-height: 140px;
+  max-width: 320px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+.issue-shot { display: block; max-width: 100%; margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; }
 .modal-card p { margin: 0; }
 .danger-card { border-color: rgba(255, 107, 107, 0.45); }
 
@@ -1222,5 +1463,8 @@ button.danger:disabled {
   .form-actions {
     grid-column: auto;
   }
-  .plan-grid { grid-template-columns: 1fr; }
+  .plan-grid,
+  .limit-grid { grid-template-columns: 1fr; }
+  .admin-console { grid-template-columns: 1fr; }
+  .settings-menu { flex-direction: row; flex-wrap: wrap; position: static; }
 }

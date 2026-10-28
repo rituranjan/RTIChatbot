@@ -1,9 +1,12 @@
 #!/bin/sh
 set -e
 
+mkdir -p /data/tenants /data/error_screenshots
 python manage.py makemigrations chatbot --noinput
 python manage.py migrate --noinput
 python manage.py seed_database
+python manage.py sync_admin_settings
+python manage.py seed_prompts
 python manage.py collectstatic --noinput
 
 exec gunicorn config.wsgi:application \

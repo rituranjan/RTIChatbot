@@ -3,7 +3,9 @@ import logging
 from django.conf import settings
 
 from ..models import Message, WebSource
-from .llm_service import chat_completion
+from .llm_gateway import build_grounded_user_prompt, complete_for_user
+from .llm_service import LLMError
+from .plan_access import limit_reply, model_for
 from .profile_service import assert_profile
 from .retrieval_service import accessible_documents, retrieve
 from .sql_lookup import lookup_keywords
@@ -101,34 +103,41 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
                         for s in web_sources
                     )
                 )
-            cite = (
-                "Answer in short friendly sentences a website visitor can read. "
-                "Do not include citation brackets.\n"
-                if style == "widget"
-                else "Cite a document or website fact as [title#chunk_index]. "
-                "Describe database rows in plain sentences without inventing extra rows.\n"
-            )
-            grounded = (
-                "Answer using ONLY the database results, document excerpts, and website excerpts below. "
-                "Do not use outside knowledge. "
-                "If a database lookup failed or returned no rows, say that plainly.\n"
-                + cite
-                + "If none of these sources answer the question, reply with exactly this sentence:\n"
-                + missing
-                + "\n\n"
-                + "\n\n".join(sections)
-                + f"\n\nQuestion: {user_text}"
+            sections_text = "\n\n".join(sections)
+            grounded = build_grounded_user_prompt(
+                owner, user_text, sections_text, style, missing
             )
             messages = prior_questions + [{"role": "user", "content": grounded}]
-            system_prompt = (
-                "You answer only from the database results, document excerpts, and website excerpts "
-                "in the latest user message. Never add facts from general knowledge."
-            )
+            system_slug = "chat.grounded.system"
         else:
             messages = prior_questions + [{"role": "user", "content": user_text}]
-            system_prompt = "You are a helpful assistant."
+            system_slug = "chat.general.system"
 
-        answer = chat_completion(messages, system_prompt=system_prompt, temperature=0)
+        blocked = limit_reply(owner)
+        if blocked:
+            answer = blocked
+        else:
+            model = model_for(owner)
+            if not model:
+                answer = (
+                    "This plan does not have a chat model yet. "
+                    "An admin can assign models in Settings."
+                )
+            else:
+                result = complete_for_user(
+                    owner,
+                    workflow="chat.reply",
+                    model=model,
+                    messages=messages,
+                    system_slug=system_slug,
+                    temperature=0,
+                )
+                if result.get("blocked"):
+                    answer = result["content"]
+                else:
+                    answer = result["content"]
+                    if not answer:
+                        raise LLMError("OpenRouter returned an empty response.")
 
     if not answer:
         answer = "(The model returned an empty response.)"

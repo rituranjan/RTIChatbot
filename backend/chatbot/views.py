@@ -436,6 +436,8 @@ class HealthView(APIView):
 
 class OllamaStatusView(APIView):
     def get(self, request):
-        status_payload = provider_status()
+        from .acting import data_user
+
+        status_payload = provider_status(data_user(request))
         status_payload["embedding_model"] = status_payload.get("embedding_model")
         return Response(status_payload)

@@ -12,6 +12,7 @@ import InsightsPage from "./InsightsPage";
 import QuestionsPage from "./QuestionsPage";
 import SqlKeywordsPage from "./SqlKeywordsPage";
 import AdminSettingsPage from "./AdminSettingsPage";
+import ModelPage from "./ModelPage";
 import WorkspaceBar from "../components/WorkspaceBar";
 import WebsitesPage from "./WebsitesPage";
 
@@ -169,7 +170,7 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
       )}
 
       <div className="main-area">
-        <Topbar user={user} theme={theme} setTheme={setTheme} onLogout={logout} />
+        <Topbar user={user} actingId={acting?.id || ""} theme={theme} setTheme={setTheme} onLogout={logout} />
         <AppNav section={section} onNavigate={setSection} admin={admin} />
         {admin && (
           <WorkspaceBar
@@ -208,6 +209,7 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
           )}
           {section === "visitors" && <InsightsPage mode="visitors" />}
           {section === "chats" && <InsightsPage mode="chats" />}
+          {section === "model" && <ModelPage />}
         </div>}
       </div>
     </div>

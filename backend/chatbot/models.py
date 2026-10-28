@@ -329,19 +329,142 @@ def default_plan_days():
     return {"basic": 0, "silver": 0, "gold": 0, "diamond": 0}
 
 
+def default_plan_access():
+    requests = {"basic": 10, "silver": 20, "gold": 30, "diamond": 40}
+    labels = {"basic": "Basic", "silver": "Silver", "gold": "Gold", "diamond": "Diamond"}
+    return {
+        key: {
+            "days": 0,
+            "models": [],
+            "monthly_requests": requests[key],
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "limit_message": f"You have reached the {labels[key]} plan limit for this month.",
+        }
+        for key in requests
+    }
+
+
 class AppSetting(models.Model):
     """One row. A day count of 0 means automatic deletion is off."""
 
     id = models.PositiveSmallIntegerField(primary_key=True, default=1)
     retention_days = models.PositiveIntegerField(default=0)
     plan_days = models.JSONField(default=default_plan_days)
+    plan_access = models.JSONField(default=default_plan_access)
+    openrouter_api_key = models.CharField(max_length=300, blank=True, default="")
+    mail_settings = models.JSONField(default=dict, blank=True)
     not_found_message = models.TextField(
         default="I could not find that in your uploaded files or websites."
     )
     last_purge_at = models.DateTimeField(null=True, blank=True)
+    llm_policy = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name = "app setting"
+
+
+def default_llm_policy():
+    return {
+        "default_max_output_tokens": 2048,
+        "default_max_input_tokens_per_request": 0,
+        "missing_plan_policy": "defaults",
+    }
+
+
+class PromptTemplate(models.Model):
+    """Admin-managed LLM instruction text keyed by workflow slug."""
+
+    slug = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=200)
+    category = models.CharField(max_length=64, default="chat")
+    workflow = models.CharField(max_length=64, default="chat")
+    description = models.TextField(blank=True, default="")
+    active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+    active_version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["category", "slug"]
+        verbose_name = "prompt template"
+
+
+class PromptVersion(models.Model):
+    prompt = models.ForeignKey(
+        PromptTemplate, on_delete=models.CASCADE, related_name="versions"
+    )
+    version = models.PositiveIntegerField()
+    content = models.TextField()
+    variables = models.JSONField(default=list, blank=True)
+    note = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prompt", "version"], name="chatbot_prompt_version_unique"
+            )
+        ]
+        verbose_name = "prompt version"
+
+
+class LlmUsageLog(models.Model):
+    """One LLM completion attempt for cost and token observability."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="llm_usage"
+    )
+    workflow = models.CharField(max_length=64)
+    provider = models.CharField(max_length=32, default="openrouter")
+    model = models.CharField(max_length=120, blank=True, default="")
+    prompt_slug = models.CharField(max_length=80, blank=True, default="")
+    prompt_version = models.PositiveIntegerField(default=0)
+    estimated_input_tokens = models.PositiveIntegerField(default=0)
+    actual_input_tokens = models.PositiveIntegerField(default=0)
+    max_output_tokens = models.PositiveIntegerField(default=0)
+    actual_output_tokens = models.PositiveIntegerField(default=0)
+    cached_tokens = models.PositiveIntegerField(default=0)
+    latency_ms = models.PositiveIntegerField(default=0)
+    success = models.BooleanField(default=True)
+    error_message = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["workflow", "-created_at"]),
+        ]
+        verbose_name = "LLM usage log"
+
+
+class ErrorEvent(models.Model):
+    """A backend or UI failure, including the call stack and any screenshot file."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    source = models.CharField(max_length=16)
+    path = models.CharField(max_length=500, blank=True, default="")
+    method = models.CharField(max_length=16, blank=True, default="")
+    status_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    message = models.TextField(blank=True, default="")
+    stack = models.TextField(blank=True, default="")
+    user_id = models.IntegerField(null=True, blank=True)
+    username = models.CharField(max_length=150, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    user_agent = models.CharField(max_length=400, blank=True, default="")
+    screenshot_path = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "error event"
 
 
 class UserProfile(models.Model):
@@ -381,9 +504,32 @@ class UserChatSetting(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_setting"
     )
     not_found_message = models.TextField(blank=True, default="")
+    selected_model = models.CharField(max_length=120, blank=True, default="")
 
     class Meta:
         verbose_name = "user chat setting"
+
+
+class MonthlyUsage(models.Model):
+    """Token and request totals for one account during one calendar month."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="monthly_usage"
+    )
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    requests = models.PositiveIntegerField(default=0)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    cached_tokens = models.PositiveIntegerField(default=0)
+    email_sent = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "year", "month"], name="chatbot_usage_user_month"
+            )
+        ]
 
 
 class DatabaseRecord(models.Model):

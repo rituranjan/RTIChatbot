@@ -208,14 +208,16 @@ def embed_text(text: str):
     return embedding_service().embed(text)
 
 
-def provider_status():
+def provider_status(user=None):
     _refresh()
-    chat = chat_service()
+    from .plan_access import openrouter_status
+
+    chat = openrouter_status(user)
     embedding = embedding_service()
     return {
-        "provider": settings.LLM_PROVIDER,
-        "available": chat.configured(),
-        "chat_model": chat.model_name,
+        "provider": "openrouter",
+        "available": chat["configured"],
+        "chat_model": chat.get("model_name") or chat["model"] or "not selected",
         "embedding_provider": settings.EMBEDDING_PROVIDER or "ollama",
         "embedding_model": (
             settings.OLLAMA_EMBEDDING_MODEL
@@ -226,8 +228,12 @@ def provider_status():
                 else settings.OPENAI_EMBEDDING_MODEL
             )
         ),
-        "embedding_configured": embedding.configured() if settings.EMBEDDING_PROVIDER != "ollama" else chat.configured(),
-        "base_url": settings.OLLAMA_BASE_URL if settings.LLM_PROVIDER == "ollama" else settings.AZURE_ENDPOINT,
+        "embedding_configured": (
+            embedding.configured()
+            if (settings.EMBEDDING_PROVIDER or "ollama") != "ollama"
+            else chat["configured"]
+        ),
+        "base_url": chat["base_url"],
         "chat_model_installed": None,
         "embedding_model_installed": None,
     }

@@ -1,0 +1,81 @@
+please use 100% configurable and user input
+In Global setting  xpath( //*[@id="root"]/div/div/section/form/div[2])
+For Admin
+currently we using LLM (Azure · gpt-5.4) from env file ,Now we want change the logic,We want to use openrouter models, 
+so Admin can select Multiple model from the global settings  for each plan (Basic,Silver,Gold,Diamond) and request input monthely limit for each plan (Basic=10, Silver=20,Gold=30,Diamond=40) and Input token, Output token, Cached tokens, if exceed
+anything this, chatbot show the configurable message for each plan, and email is sent to  user,
+
+
+Add a Menu for User Login 
+
+ Selected Multimodel show in User Setting menu, for User login can change the Model so actual selected model use in backend  
+
+
+Also Improve the Setting page for Admin Later we implement many menue
+//*[@id="root"]/div/div/section/form/div[2]
+
+
+openrouter API for Model List
+
+Request
+curl --request GET \
+  --url 'https://openrouter.ai/api/v1/models?limit=500' \
+  --header 'Authorization: Bearer <token>'
+
+Response
+
+{
+  "data": [
+    {
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "instruct_type": "chatml",
+        "modality": "text->text",
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "GPT"
+      },
+      "canonical_slug": "openai/gpt-4",
+      "context_length": 8192,
+      "created": 1692901234,
+      "default_parameters": null,
+      "description": "GPT-4 is a large multimodal model that can solve difficult problems with greater accuracy.",
+      "expiration_date": null,
+      "id": "openai/gpt-4",
+      "knowledge_cutoff": null,
+      "links": {
+        "details": "/api/v1/models/openai/gpt-4/endpoints"
+      },
+      "name": "GPT-4",
+      "per_request_limits": null,
+      "pricing": {
+        "completion": "0.00006",
+        "image": "0",
+        "prompt": "0.00003",
+        "request": "0"
+      },
+      "supported_parameters": [
+        "temperature",
+        "top_p",
+        "max_tokens"
+      ],
+      "supported_voices": null,
+      "top_provider": {
+        "context_length": 8192,
+        "is_moderated": true,
+        "max_completion_tokens": 4096
+      }
+    }
+  ]
+}
+
+
+ 
+
+
+
+
+write a cursor prompt "for llm input token  and output token as user plan already configured in UI and so every request as token set and also not break any information Minimize the LLM token for low cost but full information" and all the LLM prompt write in admin database

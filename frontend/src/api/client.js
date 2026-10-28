@@ -1,3 +1,5 @@
+import { reportUiError } from "../reportUiError";
+
 async function getCsrfToken() {
   await fetch("/api/auth/csrf/", { credentials: "include" });
   const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
@@ -32,7 +34,12 @@ async function request(path, { method = "GET", body, headers = {}, isForm = fals
   if (!res.ok) {
     const detail =
       (data && (data.detail || data.error)) || `Request failed (${res.status})`;
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = res.status;
+    if (res.status >= 500 && !path.includes("/api/client-errors")) {
+      reportUiError(error, { path });
+    }
+    throw error;
   }
   return data;
 }
@@ -96,10 +103,28 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  listErrors: () => request("/api/admin-settings/errors/"),
+  errorScreenshot: async (id) => {
+    const res = await fetch(`/api/admin-settings/errors/${id}/screenshot/`, { credentials: "include" });
+    if (!res.ok) throw new Error("Screenshot unavailable.");
+    return res.blob();
+  },
+  llmUsage: () => request("/api/admin-settings/usage/"),
+  listPrompts: () => request("/api/admin-settings/prompts/"),
+  savePrompt: (slug, payload) =>
+    request(`/api/admin-settings/prompts/${encodeURIComponent(slug)}/`, {
+      method: "PATCH",
+      body: payload,
+    }),
   adminSettings: () => request("/api/admin-settings/"),
   saveAdminSettings: (payload) =>
     request("/api/admin-settings/", { method: "PATCH", body: payload }),
   purgeAdminSettings: () => request("/api/admin-settings/purge/", { method: "POST" }),
+  openRouterModels: (query) =>
+    request(`/api/admin-settings/models/${query ? `?q=${encodeURIComponent(query)}` : ""}`),
+  myPlan: () => request("/api/my-plan/"),
+  saveMyPlan: (selectedModel) =>
+    request("/api/my-plan/", { method: "PATCH", body: { selected_model: selectedModel } }),
 
   listAccounts: () => request("/api/admin/accounts/"),
   createAccount: (payload) =>

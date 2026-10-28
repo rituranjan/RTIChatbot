@@ -5,7 +5,7 @@ from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import AppSetting, Conversation, Document, Message, UserChatSetting, UserProfile, WebSource
+from .models import AppSetting, Conversation, Document, Message, MonthlyUsage, UserChatSetting, UserProfile, WebSource
 from .services.admin_settings import not_found_reply, purge_expired_data
 from .services.web_html import html_to_text, links_from_html
 from .services.web_urls import WebUrlError, assert_public_host, normalize_url, site_key
@@ -260,3 +260,306 @@ class AccountWorkspaceTests(TestCase):
         removed = client.delete(f"/api/admin/accounts/{user_id}/")
         self.assertEqual(removed.status_code, 204)
         self.assertFalse(User.objects.filter(username="mina").exists())
+
+
+class PlanLimitTests(TestCase):
+    def _access(self, **overrides):
+        basic = {
+            "days": 0,
+            "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
+            "monthly_requests": 1,
+            "input_tokens": 10,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "limit_message": "Basic limit reached.",
+        }
+        basic.update(overrides)
+        return {
+            "basic": basic,
+            "silver": {**basic, "monthly_requests": 20, "limit_message": "Silver limit reached."},
+            "gold": {**basic, "monthly_requests": 30, "limit_message": "Gold limit reached."},
+            "diamond": {**basic, "monthly_requests": 40, "limit_message": "Diamond limit reached."},
+        }
+
+    def test_request_limit_blocks_and_user_can_only_pick_plan_models(self):
+        from unittest.mock import patch
+
+        from .services.plan_access import limit_reply, record_usage
+
+        user = User.objects.create_user("lee", email="lee@example.com", password="leepass123")
+        AppSetting.objects.update_or_create(
+            pk=1, defaults={"plan_access": self._access(), "not_found_message": "Missing."}
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        denied = client.patch("/api/my-plan/", {"selected_model": "other/model"}, format="json")
+        self.assertEqual(denied.status_code, 400)
+        saved = client.patch("/api/my-plan/", {"selected_model": "openai/gpt-4o-mini"}, format="json")
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["selected_model"], "openai/gpt-4o-mini")
+
+        self.assertEqual(limit_reply(user), "")
+        record_usage(user, {"input_tokens": 3, "output_tokens": 1, "cached_tokens": 0})
+        with patch("chatbot.services.plan_access.send_limit_email", return_value=True) as mailer:
+            self.assertEqual(limit_reply(user), "Basic limit reached.")
+            mailer.assert_called_once()
+            self.assertEqual(limit_reply(user), "Basic limit reached.")
+            mailer.assert_called_once()
+        usage = MonthlyUsage.objects.get(user=user)
+        self.assertEqual(usage.requests, 1)
+        self.assertTrue(usage.email_sent)
+
+    def test_zero_token_limit_does_not_block(self):
+        from .services.plan_access import limit_reply, record_usage
+
+        user = User.objects.create_user("noor", password="noorpass123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": self._access(monthly_requests=0, input_tokens=0),
+                "not_found_message": "Missing.",
+            },
+        )
+        for _ in range(20):
+            record_usage(user, {"input_tokens": 500, "output_tokens": 500, "cached_tokens": 100})
+        self.assertEqual(limit_reply(user), "")
+
+    def test_per_request_input_cap_blocks_oversized_request(self):
+        from .services.plan_access import projected_limit_block
+
+        user = User.objects.create_user("big", password="bigpass123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"plan_access": self._access(input_tokens=50, monthly_requests=0), "not_found_message": "Missing."},
+        )
+        self.assertEqual(projected_limit_block(user, 80), "Basic limit reached.")
+        self.assertEqual(projected_limit_block(user, 40), "")
+
+    def test_monthly_token_totals_do_not_block(self):
+        from .services.plan_access import limit_reply, record_usage
+
+        user = User.objects.create_user("tok", email="tok@example.com", password="userpass123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": self._access(monthly_requests=0, input_tokens=100, output_tokens=100),
+                "not_found_message": "Missing.",
+            },
+        )
+        record_usage(user, {"input_tokens": 999, "output_tokens": 999, "cached_tokens": 999})
+        self.assertEqual(limit_reply(user), "")
+
+    def test_chat_uses_the_model_the_user_selected(self):
+        from unittest.mock import patch
+
+        from .services.chat_service import generate_reply
+
+        user = User.objects.create_user("lee2", email="lee2@example.com", password="leepass123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"plan_access": self._access(input_tokens=0), "not_found_message": "Missing.", "openrouter_api_key": "test-key"},
+        )
+        UserChatSetting.objects.create(user=user, selected_model="openai/gpt-4o-mini")
+        conversation = Conversation.objects.create(owner=user, title="Plan chat")
+        client = APIClient()
+        client.force_authenticate(user=user)
+        def fake_complete(user, **kwargs):
+            from .services.plan_access import record_usage
+
+            record_usage(user, {"input_tokens": 2, "output_tokens": 1, "cached_tokens": 0})
+            return {
+                "content": "Hello",
+                "usage": {"input_tokens": 2, "output_tokens": 1, "cached_tokens": 0},
+                "blocked": False,
+            }
+
+        with patch(
+            "chatbot.services.chat_service.complete_for_user",
+            side_effect=fake_complete,
+        ) as chat, patch("chatbot.services.plan_access.send_limit_email", return_value=True) as mailer:
+            first = generate_reply(user, conversation, "Hi there", strict=False)
+            second = generate_reply(user, conversation, "Again", strict=False)
+        self.assertEqual(first.content, "Hello")
+        self.assertEqual(chat.call_args.kwargs["model"], "openai/gpt-4o-mini")
+        self.assertEqual(second.content, "Basic limit reached.")
+        self.assertEqual(chat.call_count, 1)
+        mailer.assert_called_once()
+        status = client.get("/api/system/ollama/").json()
+        self.assertEqual(status["provider"], "openrouter")
+        self.assertEqual(status["chat_model"], "openai/gpt-4o-mini")
+
+    def test_admin_plan_inputs_reach_the_user_menu(self):
+        admin = User.objects.create_user("RRGupta", password="password123")
+        person = User.objects.create_user("sam", password="sampass123")
+        access = self._access(monthly_requests=10, input_tokens=100, output_tokens=50, cached_tokens=25)
+        access["basic"]["model_names"] = {
+            "openai/gpt-4o": "GPT-4o",
+            "openai/gpt-4o-mini": "GPT-4o mini",
+        }
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        saved = client.patch("/api/admin-settings/", {"plan_access": access}, format="json")
+        self.assertEqual(saved.status_code, 200)
+        basic = saved.json()["plan_access"]["basic"]
+        self.assertEqual(basic["monthly_requests"], 10)
+        self.assertEqual(basic["input_tokens"], 100)
+        self.assertEqual(basic["output_tokens"], 50)
+        self.assertEqual(basic["cached_tokens"], 25)
+        self.assertEqual(basic["model_names"]["openai/gpt-4o-mini"], "GPT-4o mini")
+        self.assertEqual(saved.json()["plan_access"]["silver"]["monthly_requests"], 20)
+        self.assertEqual(saved.json()["plan_access"]["gold"]["monthly_requests"], 30)
+        self.assertEqual(saved.json()["plan_access"]["diamond"]["monthly_requests"], 40)
+
+        user_client = APIClient()
+        user_client.force_authenticate(user=person)
+        plan = user_client.get("/api/my-plan/").json()
+        names = {row["id"]: row["name"] for row in plan["models"]}
+        self.assertEqual(names["openai/gpt-4o"], "GPT-4o")
+        chosen = user_client.patch("/api/my-plan/", {"selected_model": "openai/gpt-4o-mini"}, format="json")
+        self.assertEqual(chosen.status_code, 200)
+        self.assertEqual(chosen.json()["selected_model"], "openai/gpt-4o-mini")
+
+    def test_openrouter_catalog_requests_five_hundred_models(self):
+        from unittest.mock import MagicMock, patch
+
+        from .services import openrouter_service
+
+        openrouter_service._catalog.update(at=0.0, items=[], key="")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"openrouter_api_key": "sk-or-test-1234567890", "not_found_message": "Missing."},
+        )
+        payload = MagicMock()
+        payload.status_code = 200
+        payload.text = ""
+        payload.json.return_value = {
+            "data": [
+                {"id": "openai/gpt-4o", "name": "GPT-4o", "context_length": 128000},
+                {"id": "openai/gpt-4o", "name": "duplicate"},
+            ]
+        }
+        with patch("chatbot.services.openrouter_service.requests.get", return_value=payload) as get:
+            rows = openrouter_service.list_models("")
+        self.assertEqual(rows, [{"id": "openai/gpt-4o", "name": "GPT-4o", "context_length": 128000}])
+        self.assertEqual(get.call_args.kwargs["params"], {"limit": 500})
+        self.assertTrue(str(get.call_args.args[0]).endswith("/models"))
+        openrouter_service._catalog.update(at=0.0, items=[], key="")
+
+
+class ErrorLogTests(TestCase):
+    def test_ui_error_stores_user_and_screenshot(self):
+        import tempfile
+        from pathlib import Path
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from chatbot.models import ErrorEvent
+
+        user = User.objects.create_user("lee", email="lee@example.com", password="lee-pass-123")
+        client = APIClient()
+        client.force_authenticate(user=user)
+        png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+        shot = SimpleUploadedFile("ui.png", png, content_type="image/png")
+        with tempfile.TemporaryDirectory() as folder:
+            with override_settings(ERROR_SCREENSHOT_DIR=folder):
+                response = client.post(
+                    "/api/client-errors/",
+                    {
+                        "message": "Widget failed",
+                        "stack": "Error: Widget failed\n    at EmbedWidget",
+                        "path": "/embed?bot=1",
+                        "screenshot": shot,
+                    },
+                    format="multipart",
+                )
+            self.assertEqual(response.status_code, 201)
+            row = ErrorEvent.objects.get(pk=response.json()["id"])
+            self.assertEqual(row.username, "lee")
+            self.assertEqual(row.email, "lee@example.com")
+            self.assertEqual(row.user_id, user.id)
+            self.assertIn("EmbedWidget", row.stack)
+            self.assertTrue(row.screenshot_path)
+            self.assertTrue(Path(row.screenshot_path).is_file())
+            saved = Path(row.screenshot_path).read_bytes()
+            self.assertTrue(saved.startswith(b"\x89PNG"))
+
+    def test_backend_exception_stores_the_call_stack(self):
+        from chatbot.services.error_log import record_exception
+
+        class BrokenRequest:
+            path = "/api/embed/x/"
+            method = "GET"
+            user = User.objects.create_user("sam", email="sam@example.com", password="sam-pass-123")
+            META = {"HTTP_USER_AGENT": "test-agent"}
+
+        try:
+            raise RuntimeError("chat table missing")
+        except RuntimeError as exc:
+            row = record_exception(BrokenRequest(), exc, status_code=500)
+        self.assertIsNotNone(row)
+        self.assertIn("chat table missing", row.stack)
+        self.assertIn("RuntimeError", row.stack)
+        self.assertEqual(row.username, "sam")
+        self.assertEqual(row.source, "backend")
+
+
+class AdminDatabaseRouterTests(SimpleTestCase):
+    def test_settings_and_errors_use_the_admin_database(self):
+        from django.conf import settings
+
+        from chatbot.models import AppSetting, ErrorEvent
+        from chatbot.tenant_router import TenantRouter
+
+        settings.DATABASES["admin"] = {"ENGINE": "django.db.backends.sqlite3", "NAME": "unused"}
+        try:
+            router = TenantRouter()
+            self.assertEqual(router.db_for_read(AppSetting), "admin")
+            self.assertEqual(router.db_for_write(ErrorEvent), "admin")
+            self.assertIsNone(router.db_for_read(Conversation))
+            self.assertFalse(router.allow_migrate("default", "chatbot", model_name="appsetting"))
+            self.assertTrue(router.allow_migrate("admin", "chatbot", model_name="errorevent"))
+            self.assertFalse(router.allow_migrate("admin", "chatbot", model_name="conversation"))
+        finally:
+            del settings.DATABASES["admin"]
+
+
+class PromptGatewayTests(TestCase):
+    def test_prompt_render_requires_variables(self):
+        from chatbot.services.prompt_service import render_template
+
+        with self.assertRaises(ValueError):
+            render_template("Hello {{name}}", {})
+
+    def test_projected_limit_blocks_before_provider(self):
+        from chatbot.models import AppSetting
+        from chatbot.services.plan_access import projected_limit_block
+
+        user = User.objects.create_user("cap", password="cap-pass-123")
+        access = PlanLimitTests()._access(input_tokens=100, monthly_requests=0)
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"plan_access": access, "not_found_message": "Missing."},
+        )
+        self.assertEqual(projected_limit_block(user, 150), access["basic"]["limit_message"])
+        self.assertEqual(projected_limit_block(user, 40), "")
+
+    def test_gateway_passes_max_tokens_to_openrouter(self):
+        from unittest.mock import patch
+
+        from chatbot.services.llm_gateway import complete_for_user
+
+        user = User.objects.create_user("max", password="max-pass-123")
+        with patch(
+            "chatbot.services.llm_gateway.complete_chat",
+            return_value={"content": "ok", "usage": {"input_tokens": 1, "output_tokens": 1, "cached_tokens": 0}},
+        ) as chat:
+            complete_for_user(
+                user,
+                workflow="chat.reply",
+                model="openai/gpt-4o-mini",
+                messages=[{"role": "user", "content": "Hi"}],
+                inline_system="Test",
+            )
+        self.assertIn("max_tokens", chat.call_args.kwargs)
+        self.assertGreater(chat.call_args.kwargs["max_tokens"], 0)

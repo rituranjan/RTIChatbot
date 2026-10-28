@@ -46,6 +46,9 @@ services:
       # OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       # OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-300}
       DJANGO_DB_PATH: /data/db.sqlite3
+      ADMIN_DB_PATH: /data/admin.sqlite3
+      TENANT_DB_DIR: /data/tenants
+      ERROR_SCREENSHOT_DIR: /data/error_screenshots
       MEDIA_ROOT: /data/media
       STATIC_ROOT: /data/static
       APPROVED_FOLDER_ROOTS: /approved_folders

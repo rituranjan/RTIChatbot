@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 const MENUS = [
   {
     id: "knowledge",
@@ -18,6 +20,11 @@ const MENUS = [
     ],
   },
   {
+    id: "user",
+    label: "User settings",
+    items: [{ id: "model", label: "Model" }],
+  },
+  {
     id: "admin",
     label: "Admin",
     items: [{ id: "settings", label: "Settings" }],
@@ -36,6 +43,7 @@ const ADMIN_MENUS = new Set(["knowledge", "admin"]);
 const ADMIN_ITEMS = new Set(["embed"]);
 
 export default function AppNav({ section, onNavigate, admin }) {
+  const [openMenu, setOpenMenu] = useState("");
   const menus = MENUS.map((menu) => ({
     ...menu,
     items: menu.items.filter((item) => admin || !ADMIN_ITEMS.has(item.id)),
@@ -52,16 +60,24 @@ export default function AppNav({ section, onNavigate, admin }) {
       </button>
       {menus.map((menu) => (
         <div className="nav-menu" key={menu.id}>
-          <button type="button" className={menu.items.some((item) => item.id === section) ? "nav-link active" : "nav-link"}>
+          <button
+            type="button"
+            className={menu.items.some((item) => item.id === section) || openMenu === menu.id ? "nav-link active" : "nav-link"}
+            aria-expanded={openMenu === menu.id}
+            onClick={() => setOpenMenu((current) => (current === menu.id ? "" : menu.id))}
+          >
             {menu.label}
           </button>
-          <div className="nav-sub">
+          <div className={openMenu === menu.id ? "nav-sub open" : "nav-sub"}>
             {menu.items.map((item) => (
               <button
                 type="button"
                 key={item.id}
                 className={section === item.id ? "active" : ""}
-                onClick={() => onNavigate(item.id)}
+                onClick={() => {
+                  setOpenMenu("");
+                  onNavigate(item.id);
+                }}
               >
                 {item.label}
               </button>
