@@ -1,0 +1,85 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "127.0.0.1:11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+
+  # ollama-init:
+  #   image: ollama/ollama:latest
+  #   depends_on:
+  #     - ollama
+  #   environment:
+  #     OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:3b}
+  #     OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+  #   entrypoint:
+  #     - /bin/sh
+  #     - -c
+  #     - |
+  #       sleep 10
+  #       OLLAMA_HOST=http://ollama:11434 ollama pull "$${OLLAMA_CHAT_MODEL}"
+  #       OLLAMA_HOST=http://ollama:11434 ollama pull "$${OLLAMA_EMBEDDING_MODEL}"
+  #   restart: "no"
+
+  backend:
+    image: chatbot-backend:latest
+    build: ./backend
+    # depends_on:
+    #   - ollama
+    env_file:
+      - ./backend/.env
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-key-change-me}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost,backend}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://127.0.0.1:3010,http://localhost:3010,http://127.0.0.1:8010,http://localhost:8010}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://127.0.0.1:3010,http://localhost:3010,http://127.0.0.1:8010,http://localhost:8010}
+      # OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      # OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:3b}
+      # OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      # OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-300}
+      DJANGO_DB_PATH: /data/db.sqlite3
+      MEDIA_ROOT: /data/media
+      STATIC_ROOT: /data/static
+      APPROVED_FOLDER_ROOTS: /approved_folders
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      - qdrant
+    volumes:
+      - backend_data:/data
+      - ./approved_folders:/approved_folders
+      - C:/:/host_c:ro
+      - ./backend/.env:/app/.env
+      - ./backend/config:/app/config
+    ports:
+      - "${API_PORT:-8010}:8000"
+
+  frontend:
+    image: chatbot-frontend:latest
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "${UI_PORT:-3010}:80"
+
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+volumes:
+  ollama_data:
+  backend_data:
+  qdrant_data:

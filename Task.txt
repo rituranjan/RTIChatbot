@@ -1,0 +1,11 @@
+There are 4 types of user Basic,Silver, Gold,Diamond 
+1) I want create a Multitenant 
+   a) whenaver we create a user a postgres database created so all AI chat related work like (AI chat, Filter, search) on this user suppose two user a,b, so there are two postgres  database  
+
+1) Admin show and select any user and all functional do which use do and also all the functionality including (File upload,user database configure,SQL configure) xpath //*[@id="root"]/div/div/nav/div[1],2) //*[@id="root"]/div/div/nav/div[2]/div/button[2]
+ 
+Admin setting  
+2)Global setting 
+    a)Admin can configure Schedule any type of user delete all data automatically configure days from UI 
+3) User wise
+     I chatbot any information not found the showb value for configure value that set from UI page
