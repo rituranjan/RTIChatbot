@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import WebSource
+from .acting import data_user
 from .permissions import IsMenuAdmin
 from .serializers import WebSourceSerializer
 from .services.web_crawl import schedule_crawl
@@ -33,7 +34,7 @@ class WebSourceViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        return WebSource.objects.filter(owner=self.request.user).prefetch_related("pages")
+        return WebSource.objects.filter(owner=data_user(self.request)).prefetch_related("pages")
 
     def create(self, request, *args, **kwargs):
         try:
@@ -42,7 +43,7 @@ class WebSourceViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         name = str(request.data.get("name") or "").strip()[:200] or urlsplit(url).hostname
         source = WebSource.objects.create(
-            owner=request.user,
+            owner=data_user(request),
             name=name,
             url=url,
             enabled=_enabled(request.data, True),

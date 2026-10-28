@@ -81,6 +81,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "chatbot.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -111,6 +112,14 @@ DATABASES = {
         "NAME": env("DJANGO_DB_PATH", str(BASE_DIR / "db.sqlite3")),
     }
 }
+DATABASE_ROUTERS = ["chatbot.tenant_router.TenantRouter"]
+
+TENANT_PG_HOST = env("TENANT_PG_HOST", "")
+TENANT_PG_PORT = env("TENANT_PG_PORT", "5432")
+TENANT_PG_USER = env("TENANT_PG_USER", "postgres")
+TENANT_PG_PASSWORD = env("TENANT_PG_PASSWORD", "")
+TENANT_PG_MAINTENANCE_DB = env("TENANT_PG_MAINTENANCE_DB", "postgres")
+TENANT_DB_DIR = env("TENANT_DB_DIR", str(BASE_DIR / "tenants"))
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

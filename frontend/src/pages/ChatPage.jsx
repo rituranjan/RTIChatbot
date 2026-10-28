@@ -12,6 +12,7 @@ import InsightsPage from "./InsightsPage";
 import QuestionsPage from "./QuestionsPage";
 import SqlKeywordsPage from "./SqlKeywordsPage";
 import AdminSettingsPage from "./AdminSettingsPage";
+import WorkspaceBar from "../components/WorkspaceBar";
 import WebsitesPage from "./WebsitesPage";
 
 export default function ChatPage({ user, onLogout, theme, setTheme }) {
@@ -24,7 +25,10 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
   const [questions, setQuestions] = useState([]);
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState("");
+  const [acting, setActing] = useState(user?.acting_as || null);
+  const [directoryVersion, setDirectoryVersion] = useState(0);
   const admin = Boolean(user?.is_menu_admin);
+  const workspaceKey = acting?.id || "self";
 
   useEffect(() => {
     if (!admin && ["files", "databases", "sql", "embed", "websites", "settings"].includes(section)) {
@@ -38,8 +42,11 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
   }, []);
 
   useEffect(() => {
-    refreshConversations();
-  }, [refreshConversations]);
+    setActiveId(null);
+    setMessages([]);
+    setProfile(null);
+    refreshConversations().catch((err) => setError(err.message));
+  }, [refreshConversations, workspaceKey]);
 
   useEffect(() => {
     if (section !== "chat") return;
@@ -164,28 +171,44 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
       <div className="main-area">
         <Topbar user={user} theme={theme} setTheme={setTheme} onLogout={logout} />
         <AppNav section={section} onNavigate={setSection} admin={admin} />
+        {admin && (
+          <WorkspaceBar
+            user={user}
+            acting={acting}
+            version={directoryVersion}
+            onChange={setActing}
+          />
+        )}
 
         {error && section === "chat" && <div className="error-banner">{error}</div>}
 
-        {needsIntake && (
-          <IntakeForm questions={questions} onSubmit={saveIntake} error={profileError} />
+        {section === "settings" && (
+          <AdminSettingsPage
+            actingId={acting?.id}
+            onDirectoryChange={() => setDirectoryVersion((value) => value + 1)}
+            onActingChange={setActing}
+          />
         )}
-        {section === "chat" && !needsIntake && (
-          <ChatWindow messages={messages} busy={busy} onSend={send} />
-        )}
-        {section === "settings" && <AdminSettingsPage />}
-        {section === "websites" && <WebsitesPage />}
-        {section === "files" && <FilesPage />}
-        {section === "databases" && <DatabasesPage />}
-        {section === "sql" && <SqlKeywordsPage />}
-        {section === "questions" && <QuestionsPage />}
-        {section === "embed" && (
-          <section className="studio">
-            <EmbedShare inline />
-          </section>
-        )}
-        {section === "visitors" && <InsightsPage mode="visitors" />}
-        {section === "chats" && <InsightsPage mode="chats" />}
+        {section !== "settings" && <div className="workspace-stage" key={workspaceKey}>
+          {needsIntake && (
+            <IntakeForm questions={questions} onSubmit={saveIntake} error={profileError} />
+          )}
+          {section === "chat" && !needsIntake && (
+            <ChatWindow messages={messages} busy={busy} onSend={send} />
+          )}
+          {section === "websites" && <WebsitesPage />}
+          {section === "files" && <FilesPage />}
+          {section === "databases" && <DatabasesPage />}
+          {section === "sql" && <SqlKeywordsPage />}
+          {section === "questions" && <QuestionsPage />}
+          {section === "embed" && (
+            <section className="studio">
+              <EmbedShare inline />
+            </section>
+          )}
+          {section === "visitors" && <InsightsPage mode="visitors" />}
+          {section === "chats" && <InsightsPage mode="chats" />}
+        </div>}
       </div>
     </div>
   );

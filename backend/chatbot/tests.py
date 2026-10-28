@@ -5,7 +5,7 @@ from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import AppSetting, Conversation, Document, Message, UserChatSetting, WebSource
+from .models import AppSetting, Conversation, Document, Message, UserChatSetting, UserProfile, WebSource
 from .services.admin_settings import not_found_reply, purge_expired_data
 from .services.web_html import html_to_text, links_from_html
 from .services.web_urls import WebUrlError, assert_public_host, normalize_url, site_key
@@ -53,14 +53,11 @@ class CrossUserIsolationTests(TestCase):
 
     def test_cannot_delete_other_document(self):
         r = self._client(self.bob).delete(f"/api/documents/{self.alice_doc.id}/")
-        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.status_code, 403)
 
     def test_document_list_is_isolated(self):
         r = self._client(self.alice).get("/api/documents/")
-        self.assertEqual(r.status_code, 200)
-        titles = [x["title"] for x in r.json()["results"]]
-        self.assertIn("Alice doc", titles)
-        self.assertNotIn("Bob doc", titles)
+        self.assertEqual(r.status_code, 403)
 
     def test_retrieval_filters_by_owner(self):
         from .services.retrieval_service import accessible_documents
@@ -176,3 +173,90 @@ class AdminSettingsTests(TestCase):
         client = APIClient()
         client.force_authenticate(user=user)
         self.assertEqual(client.get("/api/admin-settings/").status_code, 403)
+
+
+class AccountWorkspaceTests(TestCase):
+    def tearDown(self):
+        from .models import UserProfile
+        from .services.tenant_db import drop_tenant
+
+        for profile in UserProfile.objects.all():
+            drop_tenant(profile)
+
+    def test_each_account_gets_its_own_database(self):
+        from .services.tenant_db import provision_tenant, register_database, sqlite_file, use_tenant
+
+        alice = User.objects.create_user("alice", password="alicepass123")
+        bob = User.objects.create_user("bob", password="bobpass123")
+        alice_profile = provision_tenant(alice, "gold")
+        bob_profile = provision_tenant(bob, "basic")
+        self.assertTrue(alice_profile.ready, alice_profile.error)
+        self.assertTrue(bob_profile.ready)
+        self.assertNotEqual(alice_profile.database_name, bob_profile.database_name)
+        self.assertTrue(sqlite_file(alice_profile).exists())
+        self.assertTrue(sqlite_file(bob_profile).exists())
+
+        with use_tenant(alice):
+            Conversation.objects.create(owner=alice, title="Alice only")
+        with use_tenant(bob):
+            self.assertFalse(Conversation.objects.filter(title="Alice only").exists())
+        self.assertFalse(Conversation.objects.using("default").filter(title="Alice only").exists())
+        self.assertTrue(
+            Conversation.objects.using(register_database(alice_profile)).filter(title="Alice only").exists()
+        )
+
+    def test_plan_schedule_deletes_only_that_plan(self):
+        from .services.tenant_db import provision_tenant
+
+        alice = User.objects.create_user("alice4", password="alicepass123")
+        bob = User.objects.create_user("bob4", password="bobpass123")
+        provision_tenant(alice, "basic")
+        provision_tenant(bob, "diamond")
+        AppSetting.objects.create(
+            pk=1,
+            retention_days=0,
+            plan_days={"basic": 5, "silver": 0, "gold": 0, "diamond": 0},
+            not_found_message="Nothing matched.",
+        )
+        old = Conversation.objects.create(owner=alice, title="Basic old")
+        kept = Conversation.objects.create(owner=bob, title="Diamond kept")
+        past = timezone.now() - timedelta(days=10)
+        Conversation.objects.filter(pk__in=[old.pk, kept.pk]).update(updated_at=past)
+
+        result = purge_expired_data()
+
+        self.assertTrue(result["ran"])
+        self.assertFalse(Conversation.objects.filter(title="Basic old").exists())
+        self.assertTrue(Conversation.objects.filter(title="Diamond kept").exists())
+
+    def test_admin_can_manage_accounts_and_work_as_one(self):
+        User.objects.create_user("RRGupta", password="password123")
+        client = APIClient()
+        client.login(username="RRGupta", password="password123")
+        created = client.post(
+            "/api/admin/accounts/",
+            {"username": "mina", "email": "mina@example.com", "password": "minapass123", "plan": "silver"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["plan"], "silver")
+        self.assertTrue(created.json()["database_ready"])
+        user_id = created.json()["id"]
+
+        switched = client.post("/api/admin/act-as/", {"user_id": user_id}, format="json")
+        self.assertEqual(switched.status_code, 200)
+        chat = client.post("/api/conversations/", {"title": "Mina chat"}, format="json")
+        self.assertEqual(chat.status_code, 201)
+        self.assertFalse(Conversation.objects.using("default").filter(title="Mina chat").exists())
+
+        outsider = APIClient()
+        outsider.force_authenticate(user=User.objects.create_user("omar", password="omarpass123"))
+        self.assertEqual(outsider.get("/api/admin/accounts/").status_code, 403)
+        self.assertNotIn(
+            str(chat.json()["id"]),
+            [row["id"] for row in outsider.get("/api/conversations/").json()["results"]],
+        )
+
+        removed = client.delete(f"/api/admin/accounts/{user_id}/")
+        self.assertEqual(removed.status_code, 204)
+        self.assertFalse(User.objects.filter(username="mina").exists())

@@ -17,6 +17,7 @@ from .serializers import (
     IntakeQuestionSerializer,
     SqlKeywordQuerySerializer,
 )
+from .acting import data_user
 from .permissions import IsMenuAdmin
 from .services.external_db import assert_select, run_select, test_connection
 from .services.profile_service import question_key
@@ -42,10 +43,10 @@ class DataConnectionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsMenuAdmin]
 
     def get_queryset(self):
-        return DataConnection.objects.filter(owner=self.request.user)
+        return DataConnection.objects.filter(owner=data_user(self.request))
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        serializer.save(owner=data_user(self.request))
 
     @extend_schema(request=ConnectionTestSerializer, responses={200: OpenApiTypes.OBJECT})
     @action(detail=False, methods=["post"])
@@ -67,7 +68,7 @@ class SqlKeywordQueryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsMenuAdmin]
 
     def get_queryset(self):
-        return SqlKeywordQuery.objects.filter(owner=self.request.user).select_related(
+        return SqlKeywordQuery.objects.filter(owner=data_user(self.request)).select_related(
             "connection"
         )
 
@@ -76,7 +77,7 @@ class SqlKeywordQueryViewSet(viewsets.ModelViewSet):
             instance.connection_id if instance else None
         )
         connection = DataConnection.objects.filter(
-            id=connection_id, owner=request.user
+            id=connection_id, owner=data_user(request)
         ).first()
         if connection is None:
             return None, None, Response(
@@ -104,7 +105,7 @@ class SqlKeywordQueryViewSet(viewsets.ModelViewSet):
         if not name:
             return Response({"detail": "Name is required."}, status=status.HTTP_400_BAD_REQUEST)
         query = SqlKeywordQuery.objects.create(
-            owner=request.user,
+            owner=data_user(request),
             connection=connection,
             name=name,
             keywords=keywords,
@@ -158,7 +159,7 @@ class IntakeQuestionViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        return IntakeQuestion.objects.filter(owner=self.request.user)
+        return IntakeQuestion.objects.filter(owner=data_user(self.request))
 
     def perform_create(self, serializer):
         label = serializer.validated_data["label"].strip()
@@ -166,7 +167,7 @@ class IntakeQuestionViewSet(viewsets.ModelViewSet):
         position = serializer.validated_data.get("position")
         if position in (None, 0):
             position = self.get_queryset().count()
-        serializer.save(owner=self.request.user, label=label, field_key=field_key, position=position)
+        serializer.save(owner=data_user(self.request), label=label, field_key=field_key, position=position)
 
     def perform_update(self, serializer):
         label = serializer.validated_data.get("label", serializer.instance.label).strip()
@@ -208,8 +209,8 @@ class InsightsView(APIView):
     def get(self, request):
         start, end, keyword = _bounds(request)
         qs = _apply_filters(
-            Conversation.objects.filter(owner=request.user)
-            .select_related("profile", "embed_bot")
+            Conversation.objects.filter(owner=data_user(request))
+            .select_related("profile")
             .annotate(message_count=Count("messages")),
             start,
             end,

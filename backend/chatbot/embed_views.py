@@ -15,7 +15,9 @@ from .serializers import (
     EmbedUpdateSerializer,
     MessageSerializer,
 )
+from .acting import data_user
 from .permissions import IsMenuAdmin
+from .services.tenant_db import use_tenant
 from .services.chat_service import generate_reply
 from .services.llm_service import LLMError
 from .services.profile_service import profile_answers, public_questions, save_profile
@@ -65,14 +67,15 @@ class EmbedConfigView(APIView):
         payload["messages"] = []
         payload["profile"] = None
         if _VISITOR.match(visitor):
-            conversation = Conversation.objects.filter(
-                embed_bot=bot, visitor_id=visitor
-            ).first()
-            if conversation:
-                payload["messages"] = MessageSerializer(
-                    conversation.messages.all(), many=True
-                ).data
-                payload["profile"] = profile_answers(conversation)
+            with use_tenant(bot.owner):
+                conversation = Conversation.objects.filter(
+                    embed_bot=bot, visitor_id=visitor
+                ).first()
+                if conversation:
+                    payload["messages"] = MessageSerializer(
+                        conversation.messages.all(), many=True
+                    ).data
+                    payload["profile"] = profile_answers(conversation)
         return Response(payload)
 
 
@@ -96,23 +99,24 @@ class EmbedChatView(APIView):
         if len(user_text) > 4000:
             return Response({"detail": "Message is too long."}, status=status.HTTP_400_BAD_REQUEST)
 
-        conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
-        if conversation is None:
-            conversation = Conversation.objects.create(
-                owner=bot.owner,
-                embed_bot=bot,
-                visitor_id=visitor,
-                title=f"Widget · {bot.name}"[:200],
-            )
+        with use_tenant(bot.owner):
+            conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
+            if conversation is None:
+                conversation = Conversation.objects.create(
+                    owner=bot.owner,
+                    embed_bot=bot,
+                    visitor_id=visitor,
+                    title=f"Widget · {bot.name}"[:200],
+                )
 
-        try:
-            msg = generate_reply(bot.owner, conversation, user_text, style="widget")
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        except LLMError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            try:
+                msg = generate_reply(bot.owner, conversation, user_text, style="widget")
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            except LLMError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        return Response({"message": MessageSerializer(msg).data})
+            return Response({"message": MessageSerializer(msg).data})
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -128,31 +132,32 @@ class EmbedProfileView(APIView):
         visitor = str(request.data.get("visitor_id") or "").strip()
         if not _VISITOR.match(visitor):
             return Response({"detail": "Invalid visitor."}, status=status.HTTP_400_BAD_REQUEST)
-        conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
-        if conversation is None:
-            conversation = Conversation.objects.create(
-                owner=bot.owner,
-                embed_bot=bot,
-                visitor_id=visitor,
-                title=f"Widget · {bot.name}"[:200],
-            )
-        try:
-            answers = save_profile(conversation, request.data.get("answers"))
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"profile": answers})
+        with use_tenant(bot.owner):
+            conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
+            if conversation is None:
+                conversation = Conversation.objects.create(
+                    owner=bot.owner,
+                    embed_bot=bot,
+                    visitor_id=visitor,
+                    title=f"Widget · {bot.name}"[:200],
+                )
+            try:
+                answers = save_profile(conversation, request.data.get("answers"))
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"profile": answers})
 
 
 class MyEmbedBotView(APIView):
     permission_classes = [IsMenuAdmin]
 
     def get(self, request):
-        bot = ensure_embed_bot(request.user)
+        bot = ensure_embed_bot(data_user(request))
         return Response(_owner_payload(bot))
 
     @extend_schema(request=EmbedUpdateSerializer, responses={200: OpenApiTypes.OBJECT})
     def patch(self, request):
-        bot = ensure_embed_bot(request.user)
+        bot = ensure_embed_bot(data_user(request))
         name = str(request.data.get("name") or "").strip()
         greeting = str(request.data.get("greeting") or "").strip()
         accent = str(request.data.get("accent") or "").strip()

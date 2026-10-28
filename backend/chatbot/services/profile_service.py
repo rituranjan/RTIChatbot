@@ -1,7 +1,13 @@
 """Questions asked before a chat, and the answers stored with that chat."""
 import re
 
+from django.contrib.auth import get_user_model
+
 from ..models import IntakeQuestion, VisitorProfile
+
+
+def owner_of(conversation):
+    return get_user_model().objects.get(pk=conversation.owner_id)
 
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
@@ -62,8 +68,9 @@ def profile_answers(conversation):
 
 
 def save_profile(conversation, raw):
-    cleaned = normalize_answers(conversation.owner, raw)
-    profile, _created = VisitorProfile.objects.update_or_create(
+    cleaned = normalize_answers(owner_of(conversation), raw)
+    db = conversation._state.db or "default"
+    profile, _created = VisitorProfile.objects.using(db).update_or_create(
         conversation=conversation,
         defaults={"answers": cleaned},
     )
@@ -71,7 +78,7 @@ def save_profile(conversation, raw):
 
 
 def assert_profile(conversation):
-    if not profile_required(conversation.owner):
+    if not profile_required(owner_of(conversation)):
         return
     if profile_answers(conversation) is None:
         raise ValueError("Answer the questions before starting the chat.")

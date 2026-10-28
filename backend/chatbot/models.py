@@ -7,7 +7,10 @@ from django.db import models
 class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="conversations",
+        db_constraint=False,
     )
     title = models.CharField(max_length=200, default="New conversation")
     embed_bot = models.ForeignKey(
@@ -16,6 +19,7 @@ class Conversation(models.Model):
         related_name="conversations",
         null=True,
         blank=True,
+        db_constraint=False,
     )
     visitor_id = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -321,11 +325,16 @@ class WebPage(models.Model):
         ]
 
 
+def default_plan_days():
+    return {"basic": 0, "silver": 0, "gold": 0, "diamond": 0}
+
+
 class AppSetting(models.Model):
-    """One row. retention_days 0 means automatic deletion is off."""
+    """One row. A day count of 0 means automatic deletion is off."""
 
     id = models.PositiveSmallIntegerField(primary_key=True, default=1)
     retention_days = models.PositiveIntegerField(default=0)
+    plan_days = models.JSONField(default=default_plan_days)
     not_found_message = models.TextField(
         default="I could not find that in your uploaded files or websites."
     )
@@ -333,6 +342,36 @@ class AppSetting(models.Model):
 
     class Meta:
         verbose_name = "app setting"
+
+
+class UserProfile(models.Model):
+    """Plan and the private database created for this account."""
+
+    PLAN_BASIC = "basic"
+    PLAN_SILVER = "silver"
+    PLAN_GOLD = "gold"
+    PLAN_DIAMOND = "diamond"
+    PLAN_CHOICES = [
+        (PLAN_BASIC, "Basic"),
+        (PLAN_SILVER, "Silver"),
+        (PLAN_GOLD, "Gold"),
+        (PLAN_DIAMOND, "Diamond"),
+    ]
+    PLANS = (PLAN_BASIC, PLAN_SILVER, PLAN_GOLD, PLAN_DIAMOND)
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tenant"
+    )
+    plan = models.CharField(max_length=16, choices=PLAN_CHOICES, default=PLAN_BASIC)
+    database_name = models.CharField(max_length=63, unique=True)
+    engine = models.CharField(max_length=16, default="sqlite")
+    ready = models.BooleanField(default=False)
+    error = models.TextField(blank=True, default="")
+    migrated = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "user profile"
 
 
 class UserChatSetting(models.Model):

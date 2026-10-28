@@ -101,6 +101,17 @@ export const api = {
     request("/api/admin-settings/", { method: "PATCH", body: payload }),
   purgeAdminSettings: () => request("/api/admin-settings/purge/", { method: "POST" }),
 
+  listAccounts: () => request("/api/admin/accounts/"),
+  createAccount: (payload) =>
+    request("/api/admin/accounts/", { method: "POST", body: payload }),
+  updateAccount: (id, payload) =>
+    request(`/api/admin/accounts/${id}/`, { method: "PATCH", body: payload }),
+  deleteAccount: (id) => request(`/api/admin/accounts/${id}/`, { method: "DELETE" }),
+  provisionAccount: (id) =>
+    request(`/api/admin/accounts/${id}/provision/`, { method: "POST", body: {} }),
+  actAs: (userId) =>
+    request("/api/admin/act-as/", { method: "POST", body: { user_id: userId } }),
+
   listWebsites: () => request("/api/websites/"),
   saveWebsite: (payload, id) =>
     request(id ? `/api/websites/${id}/` : "/api/websites/", {

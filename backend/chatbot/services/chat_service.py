@@ -41,7 +41,8 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
     except Exception:
         log.exception("Scheduled data deletion failed")
 
-    Message.objects.create(
+    chat_db = conversation._state.db or "default"
+    Message.objects.using(chat_db).create(
         conversation=conversation, role=Message.ROLE_USER, content=user_text
     )
 
@@ -132,7 +133,7 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
     if not answer:
         answer = "(The model returned an empty response.)"
 
-    msg = Message.objects.create(
+    msg = Message.objects.using(conversation._state.db or "default").create(
         conversation=conversation,
         role=Message.ROLE_ASSISTANT,
         content=answer,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { planLabel } from "../plans";
 
 export default function Topbar({ user, theme, setTheme, onLogout }) {
   const [status, setStatus] = useState(null);
@@ -53,6 +54,7 @@ export default function Topbar({ user, theme, setTheme, onLogout }) {
         >
           {theme === "dark" ? "Light" : "Dark"} theme
         </button>
+        {user.plan && <span className={`plan-pill plan-${user.plan}`}>{planLabel(user.plan)}</span>}
         <span className="muted">{user.username}</span>
         <button className="link" onClick={onLogout}>
           Log out

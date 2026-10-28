@@ -1,7 +1,9 @@
 from django.contrib import admin
 
 from .models import (
+    AppSetting,
     Conversation,
+    UserProfile,
     DatabaseRecord,
     EmbedBot,
     Document,
@@ -11,6 +13,13 @@ from .models import (
     Message,
     WebSource,
 )
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "plan", "database_name", "engine", "ready")
+    list_filter = ("plan", "engine", "ready")
+    search_fields = ("user__username", "database_name")
 
 
 @admin.register(Conversation)

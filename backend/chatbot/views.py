@@ -40,7 +40,9 @@ from .services.chat_service import generate_reply
 from .services.profile_service import profile_answers, save_profile
 from .services.folder_service import is_within_approved_root, run_indexing
 from .services.ingestion_service import index_document
+from .acting import data_user
 from .permissions import IsMenuAdmin, is_menu_admin
+from .models import UserProfile
 from .services.llm_service import LLMError, provider_status
 
 
@@ -48,13 +50,35 @@ from .services.llm_service import LLMError, provider_status
 # Authentication
 # ---------------------------------------------------------------------------
 
-def _user_payload(user):
+def _user_payload(user, request=None):
+    profile = UserProfile.objects.filter(user=user).first()
+    acting = None
+    if request is not None and is_menu_admin(user):
+        selected = data_user(request)
+        if selected.id != user.id:
+            acting = {
+                "id": selected.id,
+                "username": selected.username,
+                "plan": "",
+                "database_name": "",
+            }
+            selected_profile = UserProfile.objects.filter(user=selected).first()
+            if selected_profile:
+                acting["plan"] = selected_profile.plan
+                acting["database_name"] = selected_profile.database_name
+                acting["database_engine"] = selected_profile.engine
+                acting["database_ready"] = selected_profile.ready
     return {
         "id": user.id,
         "username": user.username,
         "email": user.email,
         "is_staff": user.is_staff,
         "is_menu_admin": is_menu_admin(user),
+        "plan": profile.plan if profile else "",
+        "database_name": profile.database_name if profile else "",
+        "database_engine": profile.engine if profile else "",
+        "database_ready": bool(profile and profile.ready),
+        "acting_as": acting,
     }
 
 
@@ -67,8 +91,11 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        from .services.tenant_db import provision_tenant
+
+        provision_tenant(user, "basic")
         login(request, user)
-        return Response(_user_payload(user), status=status.HTTP_201_CREATED)
+        return Response(_user_payload(user, request), status=status.HTTP_201_CREATED)
 
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -86,7 +113,7 @@ class LoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         login(request, user)
-        return Response(_user_payload(user))
+        return Response(_user_payload(user, request))
 
 
 class LogoutView(APIView):
@@ -97,7 +124,7 @@ class LogoutView(APIView):
 
 class MeView(APIView):
     def get(self, request):
-        return Response(_user_payload(request.user))
+        return Response(_user_payload(request.user, request))
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -116,13 +143,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
     serializer_class = ConversationSerializer
 
     def get_queryset(self):
-        queryset = Conversation.objects.filter(owner=self.request.user)
+        queryset = Conversation.objects.filter(owner=data_user(self.request))
         if self.action == "list":
             queryset = queryset.filter(embed_bot__isnull=True)
         return queryset.order_by("-updated_at")
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        serializer.save(owner=data_user(self.request))
 
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
@@ -169,8 +196,9 @@ class ChatView(APIView):
         if not user_text:
             return Response({"detail": "Empty message."}, status=status.HTTP_400_BAD_REQUEST)
 
+        owner = data_user(request)
         conversation = Conversation.objects.filter(
-            id=conversation_id, owner=request.user
+            id=conversation_id, owner=owner
         ).first()
         if not conversation:
             return Response(
@@ -181,7 +209,7 @@ class ChatView(APIView):
         strict = serializer.validated_data.get("strict_documents")
         try:
             msg = generate_reply(
-                request.user, conversation, user_text, strict=strict, style="app"
+                owner, conversation, user_text, strict=strict, style="app"
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -219,7 +247,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Document.objects.filter(
-            owner=self.request.user
+            owner=data_user(self.request)
         ).order_by("-created_at")
 
     def get_object(self):
@@ -228,7 +256,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import NotFound
 
             raise NotFound()
-        if obj.owner_id != self.request.user.id and not obj.is_shared:
+        if obj.owner_id != data_user(self.request).id and not obj.is_shared:
             from rest_framework.exceptions import NotFound
 
             raise NotFound()
@@ -274,7 +302,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         title = os.path.basename(file.name)[:255]
         doc = Document.objects.create(
-            owner=request.user,
+            owner=data_user(request),
             title=title,
             file=file,
             file_type=ext.lstrip("."),

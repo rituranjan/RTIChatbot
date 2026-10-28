@@ -77,6 +77,13 @@ def delete_website(owner_id, website_id) -> None:
     )
 
 
+def delete_user_collection(owner_id) -> None:
+    name = collection_name(owner_id)
+    client = qdrant()
+    if client.collection_exists(name):
+        client.delete_collection(collection_name=name)
+
+
 def search_websites(owner_id, vector: list[float], website_ids: list[str], limit: int):
     if not vector or not website_ids:
         return []

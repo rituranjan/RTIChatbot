@@ -8,6 +8,7 @@ from .knowledge_views import (
     IntakeQuestionViewSet,
     SqlKeywordQueryViewSet,
 )
+from .account_views import AccountDetailView, AccountListView, AccountProvisionView, ActAsView
 from .settings_views import AdminPurgeView, AdminSettingsView
 from .website_views import WebSourceViewSet
 from .views import (
@@ -49,6 +50,10 @@ urlpatterns = [
     path("insights/", InsightsView.as_view()),
     path("admin-settings/", AdminSettingsView.as_view()),
     path("admin-settings/purge/", AdminPurgeView.as_view()),
+    path("admin/accounts/", AccountListView.as_view()),
+    path("admin/accounts/<int:user_id>/", AccountDetailView.as_view()),
+    path("admin/accounts/<int:user_id>/provision/", AccountProvisionView.as_view()),
+    path("admin/act-as/", ActAsView.as_view()),
     path("system/health/", HealthView.as_view()),
     path("system/ollama/", OllamaStatusView.as_view()),
     path("", include(router.urls)),
