@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import AppNav from "../components/AppNav";
 import ChatWindow from "../components/ChatWindow";
+import { initialChatLanguage, writeStoredLanguage } from "../chatLanguage";
 import EmbedShare from "../components/EmbedShare";
 import IntakeForm from "../components/IntakeForm";
 import Sidebar from "../components/Sidebar";
@@ -28,6 +29,8 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
   const [profileError, setProfileError] = useState("");
   const [acting, setActing] = useState(user?.acting_as || null);
   const [directoryVersion, setDirectoryVersion] = useState(0);
+  const [languageConfig, setLanguageConfig] = useState(null);
+  const [chatLanguage, setChatLanguage] = useState("");
   const admin = Boolean(user?.is_menu_admin);
   const workspaceKey = acting?.id || "self";
 
@@ -48,6 +51,27 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
     setProfile(null);
     refreshConversations().catch((err) => setError(err.message));
   }, [refreshConversations, workspaceKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .myPlan()
+      .then((data) => {
+        if (cancelled) return;
+        const lang = data.language;
+        setLanguageConfig(lang || null);
+        setChatLanguage(initialChatLanguage(lang));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLanguageConfig(null);
+          setChatLanguage("");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceKey]);
 
   useEffect(() => {
     if (section !== "chat") return;
@@ -115,9 +139,11 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
     await refreshConversations();
   }
 
-  async function send(text) {
+  async function send(text, language) {
     if (!text.trim()) return;
     setError("");
+
+    const lang = languageConfig?.enabled ? language || chatLanguage || "" : "";
 
     let convId = activeId;
     if (!convId) {
@@ -134,7 +160,7 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
 
     setBusy(true);
     try {
-      const res = await api.sendMessage(convId, text);
+      const res = await api.sendMessage(convId, text, lang);
       setMessages((m) => [...m, res.message]);
       await refreshConversations();
     } catch (err) {
@@ -151,6 +177,11 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
       /* ignored */
     }
     onLogout();
+  }
+
+  function handleChatLanguage(code) {
+    setChatLanguage(code);
+    writeStoredLanguage(code);
   }
 
   const needsIntake = section === "chat" && questions.length > 0 && profile == null && messages.length === 0;
@@ -195,7 +226,14 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
             <IntakeForm questions={questions} onSubmit={saveIntake} error={profileError} />
           )}
           {section === "chat" && !needsIntake && (
-            <ChatWindow messages={messages} busy={busy} onSend={send} />
+            <ChatWindow
+              messages={messages}
+              busy={busy}
+              onSend={send}
+              languageConfig={languageConfig}
+              chatLanguage={chatLanguage}
+              onLanguageChange={handleChatLanguage}
+            />
           )}
           {section === "websites" && <WebsitesPage />}
           {section === "files" && <FilesPage />}

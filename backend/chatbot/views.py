@@ -207,9 +207,10 @@ class ChatView(APIView):
             )
 
         strict = serializer.validated_data.get("strict_documents")
+        chat_language = (serializer.validated_data.get("language") or "").strip()
         try:
             msg = generate_reply(
-                owner, conversation, user_text, strict=strict, style="app"
+                owner, conversation, user_text, strict=strict, style="app", chat_language=chat_language or None
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

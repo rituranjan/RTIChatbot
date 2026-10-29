@@ -47,7 +47,7 @@ export default function ModelPage() {
     setError("");
     setNotice("");
     try {
-      const data = await api.saveMyPlan(selected);
+      const data = await api.saveMyPlan({ selected_model: selected });
       setPlan(data);
       setSelected(data.selected_model || "");
       setNotice("Saved.");
@@ -68,7 +68,7 @@ export default function ModelPage() {
       {!plan && !error && <p className="muted">Loading…</p>}
       {plan && (
         <form onSubmit={save} className="model-form">
-          <div className="model-card">
+          <div className="model-card model-fields">
             <label className="field">
               {plan.plan_label}
               <select
@@ -84,6 +84,11 @@ export default function ModelPage() {
                 ))}
               </select>
             </label>
+            {plan.language?.enabled && (
+              <p className="muted model-language-note">
+                Reply language is chosen in the chat box when you send a message.
+              </p>
+            )}
             <button className="primary" disabled={busy || !selected}>
               {busy ? "Saving…" : "Save"}
             </button>

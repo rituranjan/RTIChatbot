@@ -22,6 +22,14 @@ const EMPTY_LLM_POLICY = {
   missing_plan_policy: "defaults",
 };
 
+const EMPTY_LANGUAGE_SETTINGS = {
+  enabled: true,
+  required: false,
+  default_code: "en",
+  enabled_codes: [],
+  languages: [],
+};
+
 function blankAccess() {
   return Object.fromEntries(
     PLANS.map((plan) => [
@@ -34,6 +42,8 @@ function blankAccess() {
         input_tokens: 0,
         output_tokens: 0,
         cached_tokens: 0,
+        website_max_pages: { basic: 50, silver: 100, gold: 200, diamond: 400 }[plan.id],
+        language_enabled: plan.id !== "basic",
         limit_message: `You have reached the ${plan.label} plan limit for this month.`,
       },
     ])
@@ -104,6 +114,7 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
   const [pendingDelete, setPendingDelete] = useState(null);
   const [confirmName, setConfirmName] = useState("");
   const [llmPolicy, setLlmPolicy] = useState(EMPTY_LLM_POLICY);
+  const [languageSettings, setLanguageSettings] = useState(EMPTY_LANGUAGE_SETTINGS);
 
   function apply(data) {
     const next = blankAccess();
@@ -132,6 +143,40 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
     setUsers(rowsOf(data));
     setLastPurge(data.last_purge_at ? new Date(data.last_purge_at).toLocaleString() : "Not run yet");
     setLlmPolicy({ ...EMPTY_LLM_POLICY, ...(data.llm_policy || {}) });
+    const lang = data.language_settings;
+    if (lang && Array.isArray(lang.languages)) {
+      setLanguageSettings({
+        enabled: true,
+        required: Boolean(lang.required),
+        default_code: lang.default_code || "en",
+        enabled_codes: Array.isArray(lang.enabled_codes) ? lang.enabled_codes : [],
+        languages: lang.languages,
+      });
+    } else {
+      setLanguageSettings(EMPTY_LANGUAGE_SETTINGS);
+    }
+  }
+
+  function updateLanguageField(field, value) {
+    setLanguageSettings((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "enabled" && !value) next.required = false;
+      return next;
+    });
+  }
+
+  function toggleLanguageCode(code, on) {
+    setLanguageSettings((current) => {
+      const languages = current.languages.map((row) =>
+        row.code === code ? { ...row, enabled: on } : row
+      );
+      const enabled_codes = languages.filter((row) => row.enabled).map((row) => row.code);
+      let default_code = current.default_code;
+      if (enabled_codes.length && !enabled_codes.includes(default_code)) {
+        default_code = enabled_codes[0];
+      }
+      return { ...current, languages, enabled_codes, default_code };
+    });
   }
 
   function reload() {
@@ -258,6 +303,8 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
               input_tokens: Number(access[plan.id].input_tokens) || 0,
               output_tokens: Number(access[plan.id].output_tokens) || 0,
               cached_tokens: Number(access[plan.id].cached_tokens) || 0,
+              website_max_pages: Number(access[plan.id].website_max_pages) || 1,
+              language_enabled: Boolean(access[plan.id].language_enabled),
             },
           ])
         ),
@@ -266,6 +313,11 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
           default_max_output_tokens: Number(llmPolicy.default_max_output_tokens) || 2048,
           default_max_input_tokens_per_request:
             Number(llmPolicy.default_max_input_tokens_per_request) || 0,
+        },
+        language_settings: {
+          required: languageSettings.required,
+          default_code: languageSettings.default_code,
+          languages: languageSettings.languages,
         },
       };
       if (apiKey.trim()) payload.openrouter_api_key = apiKey.trim();
@@ -489,6 +541,53 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
               Used when a plan leaves input or output at 0. Monthly chat count limits still use each plan&apos;s
               request limit above.
             </p>
+            <div className="language-admin">
+              <h3>Chat languages</h3>
+              <p className="muted">
+                When a plan has chat languages enabled, users on that plan see the list below in the chat box. Default
+                language, required-before-chat, and which languages appear apply to every plan that has languages
+                turned on.
+              </p>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={languageSettings.required}
+                  onChange={(event) => updateLanguageField("required", event.target.checked)}
+                />
+                Require a language before chatting (plans with languages enabled)
+              </label>
+              <label className="field">
+                Default when user does not choose
+                <select
+                  value={languageSettings.default_code}
+                  onChange={(event) => updateLanguageField("default_code", event.target.value)}
+                >
+                  {(languageSettings.languages || [])
+                    .filter((row) => row.enabled)
+                    .map((row) => (
+                      <option key={row.code} value={row.code}>
+                        {row.label}
+                        {row.native_label && row.native_label !== row.label ? ` (${row.native_label})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className="language-check-grid">
+                {(languageSettings.languages || []).map((row) => (
+                  <label key={row.code} className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.enabled)}
+                      onChange={(event) => toggleLanguageCode(row.code, event.target.checked)}
+                    />
+                    <span>
+                      {row.label}
+                      {row.native_label && row.native_label !== row.label ? ` — ${row.native_label}` : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className="model-search">
               <p className="muted grow">
                 {catalog.length
@@ -571,11 +670,29 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                     onChange={(event) => updatePlan(activePlan.id, "output_tokens", event.target.value)}
                   />
                 </label>
+                <label className="field">
+                  Website RAG page limit
+                  <input
+                    type="number"
+                    min="1"
+                    max="400"
+                    value={activeAccess.website_max_pages ?? 300}
+                    onChange={(event) => updatePlan(activePlan.id, "website_max_pages", event.target.value)}
+                  />
+                </label>
+                <label className="checkbox-row plan-language-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(activeAccess.language_enabled)}
+                    onChange={(event) => updatePlan(activePlan.id, "language_enabled", event.target.checked)}
+                  />
+                  Enable chat language dropdown
+                </label>
               </div>
               <p className="muted">
                 Monthly request limits are Basic 10, Silver 20, Gold 30, and Diamond 40. Input and output numbers
-                apply to each single chat call only (0 turns that limit off). Long context is shortened before the
-                call so important facts stay when possible. Cached tokens are not used for blocking.
+                apply to each single chat call only (0 turns that limit off). Website page limit caps how many pages
+                are indexed per site for RAG (1–400). Turn on chat languages per plan to show the language list in chat.
               </p>
               <label className="field">
                 Message when a limit is reached

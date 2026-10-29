@@ -21,6 +21,7 @@ from .services.tenant_db import use_tenant
 from .services.chat_service import generate_reply
 from .services.llm_service import LLMError
 from .services.profile_service import profile_answers, public_questions, save_profile
+from .services.languages import language_public_payload
 
 _VISITOR = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
@@ -62,6 +63,7 @@ class EmbedConfigView(APIView):
         if not bot:
             return Response({"detail": "Chatbot not found."}, status=status.HTTP_404_NOT_FOUND)
         payload = _public_bot(bot)
+        payload["language"] = language_public_payload(bot.owner)
         payload["questions"] = public_questions(bot.owner)
         visitor = (request.query_params.get("visitor_id") or "").strip()
         payload["messages"] = []
@@ -99,6 +101,8 @@ class EmbedChatView(APIView):
         if len(user_text) > 4000:
             return Response({"detail": "Message is too long."}, status=status.HTTP_400_BAD_REQUEST)
 
+        chat_language = str(request.data.get("language") or "").strip() or None
+
         with use_tenant(bot.owner):
             conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
             if conversation is None:
@@ -110,7 +114,9 @@ class EmbedChatView(APIView):
                 )
 
             try:
-                msg = generate_reply(bot.owner, conversation, user_text, style="widget")
+                msg = generate_reply(
+                    bot.owner, conversation, user_text, style="widget", chat_language=chat_language
+                )
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             except LLMError as exc:

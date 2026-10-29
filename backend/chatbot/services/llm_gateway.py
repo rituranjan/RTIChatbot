@@ -34,6 +34,7 @@ def complete_for_user(
     prompt_slug=None,
     prompt_variables=None,
     temperature=0,
+    chat_language=None,
 ):
     """
     Run one OpenRouter chat completion under the user's plan.
@@ -45,6 +46,10 @@ def complete_for_user(
         system_text, prompt_version = get_prompt(system_slug, system_variables or {})
     elif prompt_slug:
         system_text, prompt_version = get_prompt(prompt_slug, prompt_variables or {})
+
+    from .languages import apply_language_to_system
+
+    system_text = apply_language_to_system(system_text, user, chat_language=chat_language)
 
     trimmed = trim_user_history(messages)
     input_cap = per_request_input_cap(user)

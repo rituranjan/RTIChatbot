@@ -205,6 +205,7 @@ class ProfileBodySerializer(serializers.Serializer):
 class EmbedChatBodySerializer(serializers.Serializer):
     visitor_id = serializers.CharField()
     message = serializers.CharField()
+    language = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class EmbedProfileBodySerializer(serializers.Serializer):
@@ -222,5 +223,6 @@ class EmbedUpdateSerializer(serializers.Serializer):
 class ChatRequestSerializer(serializers.Serializer):
     conversation_id = serializers.UUIDField()
     message = serializers.CharField()
+    language = serializers.CharField(required=False, allow_blank=True, default="")
     stream = serializers.BooleanField(required=False, default=False)
     strict_documents = serializers.BooleanField(required=False, allow_null=True, default=None)

@@ -2,7 +2,6 @@
 set -e
 
 mkdir -p /data/tenants /data/error_screenshots
-python manage.py makemigrations chatbot --noinput
 python manage.py migrate --noinput
 python manage.py seed_database
 python manage.py sync_admin_settings

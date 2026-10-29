@@ -332,6 +332,8 @@ def default_plan_days():
 def default_plan_access():
     requests = {"basic": 10, "silver": 20, "gold": 30, "diamond": 40}
     labels = {"basic": "Basic", "silver": "Silver", "gold": "Gold", "diamond": "Diamond"}
+    website_pages = {"basic": 50, "silver": 100, "gold": 200, "diamond": 400}
+    language_on = {"basic": False, "silver": True, "gold": True, "diamond": True}
     return {
         key: {
             "days": 0,
@@ -340,6 +342,8 @@ def default_plan_access():
             "input_tokens": 0,
             "output_tokens": 0,
             "cached_tokens": 0,
+            "website_max_pages": website_pages[key],
+            "language_enabled": language_on[key],
             "limit_message": f"You have reached the {labels[key]} plan limit for this month.",
         }
         for key in requests
@@ -360,6 +364,7 @@ class AppSetting(models.Model):
     )
     last_purge_at = models.DateTimeField(null=True, blank=True)
     llm_policy = models.JSONField(default=dict, blank=True)
+    language_settings = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name = "app setting"
@@ -439,8 +444,8 @@ class LlmUsageLog(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["user", "-created_at"]),
-            models.Index(fields=["workflow", "-created_at"]),
+            models.Index(fields=["user", "-created_at"], name="chatbot_llm_user_created_idx"),
+            models.Index(fields=["workflow", "-created_at"], name="chatbot_llm_wf_created_idx"),
         ]
         verbose_name = "LLM usage log"
 
@@ -505,6 +510,7 @@ class UserChatSetting(models.Model):
     )
     not_found_message = models.TextField(blank=True, default="")
     selected_model = models.CharField(max_length=120, blank=True, default="")
+    preferred_language = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:
         verbose_name = "user chat setting"

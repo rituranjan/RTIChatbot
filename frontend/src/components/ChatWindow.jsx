@@ -2,7 +2,14 @@ import { useEffect, useRef } from "react";
 import Composer from "./Composer";
 import MessageBubble from "./MessageBubble";
 
-export default function ChatWindow({ messages, busy, onSend }) {
+export default function ChatWindow({
+  messages,
+  busy,
+  onSend,
+  languageConfig,
+  chatLanguage,
+  onLanguageChange,
+}) {
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -36,7 +43,13 @@ export default function ChatWindow({ messages, busy, onSend }) {
         <div ref={endRef} />
       </div>
 
-      <Composer onSend={onSend} disabled={busy} />
+      <Composer
+        onSend={onSend}
+        disabled={busy}
+        languageConfig={languageConfig}
+        chatLanguage={chatLanguage}
+        onLanguageChange={onLanguageChange}
+      />
     </div>
   );
 }

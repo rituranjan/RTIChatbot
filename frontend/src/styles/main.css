@@ -354,14 +354,27 @@ select:focus {
 /* Composer */
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 16px 20px;
   border-top: 1px solid var(--border);
   background: var(--bg-2);
   align-items: flex-end;
 }
+.chat-language-field {
+  flex: 0 0 200px;
+  min-width: 160px;
+  margin: 0;
+}
+.chat-language-field select {
+  width: 100%;
+}
+.chat-language-label {
+  font-size: 12px;
+  color: var(--muted);
+}
 .composer textarea {
-  flex: 1;
+  flex: 1 1 200px;
   max-height: 200px;
 }
 .composer button {
@@ -732,9 +745,40 @@ html.embed-page #root {
 }
 .widget-compose {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 12px;
   background: #fff;
+}
+.widget-compose-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.widget-compose-lang {
+  width: 100%;
+}
+.widget-lang-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+.widget-lang-field select {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+.widget-compose-row input {
+  flex: 1;
+  border: 0;
+  background: #f2f5fa;
+  border-radius: 999px;
+  padding: 12px 16px;
+  outline: none;
 }
 .widget-compose input {
   flex: 1;
@@ -1140,6 +1184,26 @@ html.embed-page #root {
   gap: 12px;
   margin-bottom: 14px;
 }
+.language-admin {
+  margin: 16px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.language-admin h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.plan-language-toggle {
+  grid-column: 1 / -1;
+}
+.language-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 12px;
+  margin-top: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
 .plan-workspace {
   margin-bottom: 14px;
 }
@@ -1265,10 +1329,12 @@ html.embed-page #root {
   margin: 0 0 12px;
   font-size: 22px;
 }
-.model-card {
-  display: flex;
-  gap: 8px;
+.model-card.model-fields {
+  flex-wrap: wrap;
   align-items: flex-end;
+}
+.model-card.model-fields .field {
+  flex: 1 1 180px;
 }
 .model-card .field {
   flex: 1;

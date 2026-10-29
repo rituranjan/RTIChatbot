@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import IntakeForm from "../components/IntakeForm";
+import ChatLanguageSelect from "../components/ChatLanguageSelect";
+import { initialChatLanguage, writeStoredLanguage } from "../chatLanguage";
 import { reportUiError } from "../reportUiError";
 
 let memoryVisitor = "";
@@ -52,6 +54,7 @@ export default function EmbedWidget({ botId, mode }) {
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState("");
   const [text, setText] = useState("");
+  const [chatLanguage, setChatLanguage] = useState("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
@@ -86,6 +89,7 @@ export default function EmbedWidget({ botId, mode }) {
         setMessages(data.messages || []);
         setQuestions(data.questions || []);
         setProfile(data.profile);
+        setChatLanguage(initialChatLanguage(data.language));
       })
       .catch((err) => {
         setError(err.message);
@@ -99,7 +103,11 @@ export default function EmbedWidget({ botId, mode }) {
 
   async function send(value) {
     const message = (value ?? text).trim();
+    const langConfig = bot?.language;
+    const languageOn = langConfig?.enabled && (langConfig.options || []).length > 0;
+    const languageRequired = languageOn && langConfig.required;
     if (!message || busy || !bot) return;
+    if (languageRequired && !chatLanguage) return;
     setText("");
     setMessages((current) => [
       ...current,
@@ -111,7 +119,11 @@ export default function EmbedWidget({ botId, mode }) {
       const res = await fetch(`/api/embed/${botId}/chat/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visitor_id: visitorId(), message }),
+        body: JSON.stringify({
+          visitor_id: visitorId(),
+          message,
+          language: languageOn ? chatLanguage : "",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -153,6 +165,15 @@ export default function EmbedWidget({ botId, mode }) {
   const accent = bot?.accent || "#2563eb";
   const needsIntake = questions.length > 0 && profile == null;
   const showChips = messages.length === 0 && !busy && !needsIntake;
+  const langConfig = bot?.language;
+  const languageOn = langConfig?.enabled && (langConfig.options || []).length > 0;
+  const languageRequired = languageOn && langConfig?.required;
+  const canType = !busy && bot && !needsIntake && (!languageRequired || Boolean(chatLanguage));
+
+  function handleLanguage(code) {
+    setChatLanguage(code);
+    writeStoredLanguage(code);
+  }
 
   return (
     <div className={`widget-shell ${panelMode ? "panel-mode" : ""} ${inFrame ? "in-frame" : ""}`}>
@@ -248,19 +269,36 @@ export default function EmbedWidget({ botId, mode }) {
               send();
             }}
           >
+            {languageOn && (
+              <div className="widget-compose-lang">
+                <ChatLanguageSelect
+                  id="embed-chat-language"
+                  languageConfig={langConfig}
+                  value={chatLanguage}
+                  onChange={handleLanguage}
+                  className="widget-lang-field"
+                />
+              </div>
+            )}
+            <div className="widget-compose-row">
             <input
               ref={inputRef}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Type a message…"
-              disabled={busy || !bot || needsIntake}
-              style={{ "color": "black" }}
+              placeholder={
+                languageRequired && !chatLanguage
+                  ? "Choose a language first…"
+                  : "Type a message…"
+              }
+              disabled={!canType}
+              style={{ color: "black" }}
             />
-            <button type="submit" disabled={busy || !text.trim()} aria-label="Send">
+            <button type="submit" disabled={!canType || !text.trim()} aria-label="Send">
               <svg viewBox="0 0 24 24" width="18" height="18">
                 <path fill="currentColor" d="M3 11.5 21 3l-7.5 18-2.2-7.3L3 11.5z" />
               </svg>
             </button>
+            </div>
           </form>
         </section>
       )}

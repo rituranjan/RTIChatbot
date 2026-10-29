@@ -271,14 +271,17 @@ class PlanLimitTests(TestCase):
             "input_tokens": 10,
             "output_tokens": 0,
             "cached_tokens": 0,
+            "website_max_pages": 50,
+            "language_enabled": True,
             "limit_message": "Basic limit reached.",
         }
         basic.update(overrides)
+        extra = {k: v for k, v in basic.items() if k not in ("monthly_requests", "limit_message")}
         return {
             "basic": basic,
-            "silver": {**basic, "monthly_requests": 20, "limit_message": "Silver limit reached."},
-            "gold": {**basic, "monthly_requests": 30, "limit_message": "Gold limit reached."},
-            "diamond": {**basic, "monthly_requests": 40, "limit_message": "Diamond limit reached."},
+            "silver": {**extra, "monthly_requests": 20, "limit_message": "Silver limit reached.", "website_max_pages": 100},
+            "gold": {**extra, "monthly_requests": 30, "limit_message": "Gold limit reached.", "website_max_pages": 200},
+            "diamond": {**extra, "monthly_requests": 40, "limit_message": "Diamond limit reached.", "website_max_pages": 400},
         }
 
     def test_request_limit_blocks_and_user_can_only_pick_plan_models(self):
@@ -522,6 +525,155 @@ class AdminDatabaseRouterTests(SimpleTestCase):
             self.assertFalse(router.allow_migrate("admin", "chatbot", model_name="conversation"))
         finally:
             del settings.DATABASES["admin"]
+
+
+class LanguageSettingsTests(TestCase):
+    def setUp(self):
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"language_settings": {}, "plan_access": PlanLimitTests()._access()},
+        )
+
+    def test_clean_requires_enabled_when_required(self):
+        from chatbot.services.languages import clean_language_settings
+
+        cleaned = clean_language_settings(
+            {"required": True, "default_code": "en", "enabled_codes": ["en"]}
+        )
+        self.assertTrue(cleaned["required"])
+
+    def test_plan_language_and_website_cap(self):
+        from chatbot.services.plan_access import language_enabled_for, website_max_pages_for
+
+        user = User.objects.create_user("cap", password="cap-pass-123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": {
+                    "basic": {
+                        "days": 0,
+                        "models": [],
+                        "monthly_requests": 10,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cached_tokens": 0,
+                        "website_max_pages": 25,
+                        "language_enabled": True,
+                        "limit_message": "Limit.",
+                    },
+                    "silver": {
+                        "days": 0,
+                        "models": [],
+                        "monthly_requests": 20,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cached_tokens": 0,
+                        "website_max_pages": 100,
+                        "language_enabled": False,
+                        "limit_message": "Limit.",
+                    },
+                    "gold": {
+                        "days": 0,
+                        "models": [],
+                        "monthly_requests": 30,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cached_tokens": 0,
+                        "website_max_pages": 200,
+                        "language_enabled": False,
+                        "limit_message": "Limit.",
+                    },
+                    "diamond": {
+                        "days": 0,
+                        "models": [],
+                        "monthly_requests": 40,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cached_tokens": 0,
+                        "website_max_pages": 400,
+                        "language_enabled": False,
+                        "limit_message": "Limit.",
+                    },
+                }
+            },
+        )
+        self.assertEqual(website_max_pages_for(user), 25)
+        self.assertTrue(language_enabled_for(user))
+
+    def test_validate_user_language_when_required(self):
+        from chatbot.services.languages import validate_user_language
+
+        user = User.objects.create_user("langval", password="lang-val-pass")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": PlanLimitTests()._access(),
+                "language_settings": {
+                    "required": True,
+                    "default_code": "en",
+                    "enabled_codes": ["en", "hi"],
+                },
+            },
+        )
+        with self.assertRaises(ValueError):
+            validate_user_language("", user=user)
+        self.assertEqual(validate_user_language("hi", user=user), "hi")
+
+    def test_language_block_message(self):
+        from chatbot.services.languages import language_block_message
+
+        user = User.objects.create_user("languser", password="lang-pass-123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": PlanLimitTests()._access(),
+                "language_settings": {
+                    "required": True,
+                    "default_code": "en",
+                    "enabled_codes": ["en"],
+                },
+            },
+        )
+        self.assertIn("list", language_block_message(user))
+        UserChatSetting.objects.create(user=user, preferred_language="en")
+        self.assertEqual(language_block_message(user), "")
+        self.assertEqual(language_block_message(user, "en"), "")
+
+    def test_resolve_chat_language_prefers_chat_selection(self):
+        from chatbot.services.languages import resolve_chat_language
+
+        user = User.objects.create_user("pick", password="pick-pass-123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": PlanLimitTests()._access(),
+                "language_settings": {
+                    "required": False,
+                    "default_code": "en",
+                    "enabled_codes": ["en", "hi"],
+                },
+            },
+        )
+        self.assertEqual(resolve_chat_language(user, "hi"), "hi")
+
+    def test_apply_language_to_system(self):
+        from chatbot.services.languages import apply_language_to_system
+
+        user = User.objects.create_user("hiuser", password="hi-pass-123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": PlanLimitTests()._access(),
+                "language_settings": {
+                    "required": False,
+                    "default_code": "hi",
+                    "enabled_codes": ["hi"],
+                },
+            },
+        )
+        text = apply_language_to_system("You are helpful.", user)
+        self.assertIn("Hindi", text)
+        self.assertIn("Language:", text)
 
 
 class PromptGatewayTests(TestCase):

@@ -144,6 +144,7 @@ def settings_payload(viewer=None) -> dict:
     ]
     from django.conf import settings as django_settings
 
+    from .languages import admin_language_editor, merged_language_settings
     from .plan_access import llm_policy, mail_public, merged_access
 
     stored_key = bool((config.openrouter_api_key or "").strip())
@@ -152,6 +153,7 @@ def settings_payload(viewer=None) -> dict:
         "plans": plan_schedule(config),
         "plan_access": merged_access(config),
         "llm_policy": llm_policy(),
+        "language_settings": admin_language_editor(),
         "database_mode": "postgresql" if postgres_enabled() else "sqlite",
         "not_found_message": config.not_found_message,
         "last_purge_at": config.last_purge_at,
@@ -241,6 +243,10 @@ def save_settings(data, viewer=None) -> dict:
             raise ValueError("Missing plan policy must be defaults or block.")
         base["missing_plan_policy"] = policy
         config.llm_policy = base
+    if "language_settings" in data:
+        from .languages import clean_language_settings
+
+        config.language_settings = clean_language_settings(data.get("language_settings"))
     config.save()
 
     users = data.get("users")

@@ -57,6 +57,13 @@ def merged_access(config=None):
                 return fallback
 
         message = str(raw.get("limit_message") or base["limit_message"]).strip()
+        lang_on = raw.get("language_enabled")
+        if isinstance(lang_on, str):
+            language_enabled = lang_on.strip().lower() not in ("0", "false", "no", "off")
+        elif lang_on is None:
+            language_enabled = bool(base.get("language_enabled", False))
+        else:
+            language_enabled = bool(lang_on)
         result[key] = {
             "days": max(0, min(3650, day_value)),
             "models": models[:40],
@@ -65,6 +72,8 @@ def merged_access(config=None):
             "input_tokens": number("input_tokens", 0),
             "output_tokens": number("output_tokens", 0),
             "cached_tokens": number("cached_tokens", 0),
+            "website_max_pages": max(1, min(400, number("website_max_pages", base.get("website_max_pages", 300), raw))),
+            "language_enabled": language_enabled,
             "limit_message": (message or base["limit_message"])[:2000],
         }
     return result
@@ -105,6 +114,8 @@ def clean_plan_access(incoming):
             "input_tokens": _whole(raw.get("input_tokens"), f"{label} input tokens", 100_000_000),
             "output_tokens": _whole(raw.get("output_tokens"), f"{label} output tokens", 100_000_000),
             "cached_tokens": _whole(raw.get("cached_tokens"), f"{label} cached tokens", 100_000_000),
+            "website_max_pages": max(1, min(400, _whole(raw.get("website_max_pages"), f"{label} website page limit", 400))),
+            "language_enabled": bool(raw.get("language_enabled")),
             "limit_message": message[:2000],
         }
     return cleaned
@@ -119,6 +130,15 @@ def user_plan(user) -> str:
 
 def rules_for(user) -> dict:
     return merged_access()[user_plan(user)]
+
+
+def website_max_pages_for(user) -> int:
+    cap = int(rules_for(user).get("website_max_pages") or 300)
+    return max(1, min(cap, 400))
+
+
+def language_enabled_for(user) -> bool:
+    return bool(rules_for(user).get("language_enabled"))
 
 
 def chosen_model(user):
@@ -351,9 +371,13 @@ def record_usage(user, usage) -> None:
 
 
 def my_plan_payload(user) -> dict:
+    from .languages import chosen_language, language_label, language_public_payload
+
     plan = user_plan(user)
     rules = merged_access()[plan]
     usage = current_usage(user)
+    setting = UserChatSetting.objects.filter(user=user).first()
+    saved_lang = (setting.preferred_language if setting else "") or ""
     return {
         "plan": plan,
         "plan_label": PLAN_LABELS[plan],
@@ -362,11 +386,15 @@ def my_plan_payload(user) -> dict:
             for model_id in rules["models"]
         ],
         "selected_model": model_for(user),
+        "language": language_public_payload(user),
+        "selected_language": saved_lang,
+        "effective_language": language_label(chosen_language(user)) if chosen_language(user) else "",
         "limits": {
             "monthly_requests": rules["monthly_requests"],
             "input_tokens": rules["input_tokens"],
             "output_tokens": rules["output_tokens"],
             "cached_tokens": rules["cached_tokens"],
+            "website_max_pages": website_max_pages_for(user),
             "input_tokens_scope": "per_request",
             "output_tokens_scope": "per_request",
         },
@@ -381,14 +409,25 @@ def my_plan_payload(user) -> dict:
     }
 
 
-def set_selected_model(user, model) -> dict:
-    chosen = str(model or "").strip()
-    allowed = rules_for(user)["models"]
-    if chosen not in allowed:
-        raise ValueError("Choose one of the models assigned to this plan.")
+def set_selected_model(user, model=None, preferred_language=None) -> dict:
+    from .languages import validate_user_language
+
     row, _created = UserChatSetting.objects.get_or_create(user=user)
-    row.selected_model = chosen
-    row.save(update_fields=["selected_model"])
+    updates = []
+    if model is not None:
+        chosen = str(model or "").strip()
+        allowed = rules_for(user)["models"]
+        if chosen not in allowed:
+            raise ValueError("Choose one of the models assigned to this plan.")
+        row.selected_model = chosen
+        updates.append("selected_model")
+    if preferred_language is not None:
+        lang = validate_user_language(preferred_language, user=user)
+        row.preferred_language = lang
+        updates.append("preferred_language")
+    if not updates:
+        raise ValueError("Nothing to save.")
+    row.save(update_fields=updates)
     return my_plan_payload(user)
 
 

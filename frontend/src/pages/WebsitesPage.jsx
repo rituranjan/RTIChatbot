@@ -15,12 +15,20 @@ export default function WebsitesPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pageCap, setPageCap] = useState(400);
 
   async function load() {
     setRows(rowsOf(await api.listWebsites()));
   }
 
   useEffect(() => {
+    api
+      .myPlan()
+      .then((data) => {
+        const cap = Number(data?.limits?.website_max_pages) || 400;
+        setPageCap(Math.max(1, Math.min(400, cap)));
+      })
+      .catch(() => {});
     load().catch((err) => setError(err.message));
   }, []);
 
@@ -55,7 +63,7 @@ export default function WebsitesPage() {
         {
           name: form.name,
           url: form.url,
-          max_pages: Number(form.max_pages) || 300,
+          max_pages: Math.min(Number(form.max_pages) || pageCap, pageCap),
           enabled: form.enabled,
         },
         editing
@@ -135,10 +143,11 @@ export default function WebsitesPage() {
           <input
             type="number"
             min="1"
-            max="400"
+            max={pageCap}
             value={form.max_pages}
             onChange={(event) => setForm({ ...form, max_pages: event.target.value })}
           />
+          <span className="muted">Your plan allows up to {pageCap} pages per website.</span>
         </label>
         <label className="check-row">
           <input

@@ -6,6 +6,7 @@ from ..models import Message, WebSource
 from .llm_gateway import build_grounded_user_prompt, complete_for_user
 from .llm_service import LLMError
 from .plan_access import limit_reply, model_for
+from .languages import language_block_message
 from .profile_service import assert_profile
 from .retrieval_service import accessible_documents, retrieve
 from .sql_lookup import lookup_keywords
@@ -32,7 +33,7 @@ def _lookup_text(lookups):
     return "\n\n".join(blocks)
 
 
-def generate_reply(owner, conversation, user_text, strict=None, style="app"):
+def generate_reply(owner, conversation, user_text, strict=None, style="app", chat_language=None):
     """Save the user turn and answer only from uploaded files and keyword SQL."""
     if strict is None:
         strict = settings.STRICT_DOCUMENTS_DEFAULT
@@ -42,6 +43,12 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
         maybe_purge()
     except Exception:
         log.exception("Scheduled data deletion failed")
+
+    from .languages import merged_language_settings, resolve_chat_language
+    from .plan_access import language_enabled_for
+
+    if language_enabled_for(owner):
+        resolve_chat_language(owner, chat_language)
 
     chat_db = conversation._state.db or "default"
     Message.objects.using(chat_db).create(
@@ -116,6 +123,8 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
         blocked = limit_reply(owner)
         if blocked:
             answer = blocked
+        elif language_block_message(owner, chat_language):
+            answer = language_block_message(owner, chat_language)
         else:
             model = model_for(owner)
             if not model:
@@ -131,6 +140,7 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app"):
                     messages=messages,
                     system_slug=system_slug,
                     temperature=0,
+                    chat_language=chat_language,
                 )
                 if result.get("blocked"):
                     answer = result["content"]

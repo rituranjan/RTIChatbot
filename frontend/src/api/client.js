@@ -62,10 +62,10 @@ export const api = {
   deleteConversation: (id) =>
     request(`/api/conversations/${id}/`, { method: "DELETE" }),
 
-  sendMessage: (conversationId, message) =>
+  sendMessage: (conversationId, message, language = "") =>
     request("/api/chat/", {
       method: "POST",
-      body: { conversation_id: conversationId, message },
+      body: { conversation_id: conversationId, message, language },
     }),
 
   listDocuments: () => request("/api/documents/"),
@@ -123,8 +123,11 @@ export const api = {
   openRouterModels: (query) =>
     request(`/api/admin-settings/models/${query ? `?q=${encodeURIComponent(query)}` : ""}`),
   myPlan: () => request("/api/my-plan/"),
-  saveMyPlan: (selectedModel) =>
-    request("/api/my-plan/", { method: "PATCH", body: { selected_model: selectedModel } }),
+  saveMyPlan: (payload) =>
+    request("/api/my-plan/", {
+      method: "PATCH",
+      body: typeof payload === "string" ? { selected_model: payload } : payload,
+    }),
 
   listAccounts: () => request("/api/admin/accounts/"),
   createAccount: (payload) =>
