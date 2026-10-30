@@ -58,7 +58,8 @@ services:
     volumes:
       - backend_data:/data
       - ./approved_folders:/approved_folders
-      - C:/:/host_c:ro
+      # Optional: bind extra host paths for folder indexing (Linux/macOS), e.g.:
+      # - /srv/shared-docs:/host_docs:ro
       - ./backend/.env:/app/.env
       - ./backend/config:/app/config
     ports:

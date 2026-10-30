@@ -20,13 +20,21 @@ Then open http://127.0.0.1:3010 and register. The API is on port 8010.
 
 ## Ubuntu server
 
-Build here, then copy the images and the `deployment` folder. On the server, use only that folder. The compose file in this root mounts `C:/` and will not start on Ubuntu.
+Build here, then copy the images and the `deployment` folder. On the server, use only that folder (no Windows `C:/` mount).
 
 ```bash
 docker compose build
-docker save -o chatbotfrontendlatest.tar hatbot-frontend:latest chatbot-backend:latest
-scp chatbotfrontendlatest.tar root@203.57.85.15:/root/tmp/
+docker save -o chatbot-images.tar chatbot-frontend:latest chatbot-backend:latest
+scp chatbot-images.tar root@203.57.85.15:/root/tmp/
 scp -r deployment root@203.57.85.15:/root/chatbot
+```
+
+You can also run `docker compose up -d --build` from this repo root on Ubuntu; the root `docker-compose.yml` is Linux-safe.
+
+**Windows dev:** to expose the host `C:` drive inside the backend container for folder indexing, use:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d --build
 ```
 
 On the server:

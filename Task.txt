@@ -10,8 +10,80 @@ There are 4 types of user Basic,Silver, Gold,Diamond
 
  turn this  //*[@id="root"]/div/div/section two tabs  Global and user 
  
+DB_DATABASE="dbowdb18a5zvzr"
+DB_USERNAME="urcypttgkfazh"
+DB_PASSWORD="43f%)3b&}1h1"
+35.213.142.189
 
 
+SELECT
+    a.application_id AS application_number,
+
+    -- RTI service
+    sc.sub_name AS service_name,
+    sc.rtitype AS application_type,
+
+    -- Application status
+    COALESCE(st.status_of_application, 'Status Not Available')
+        AS application_status,
+
+    -- Application dates
+    a.date AS application_date,
+    a.approval_date,
+    a.approved_date AS final_approval_date,
+
+    -- Payment status
+    CASE
+        WHEN a.txn_status = 'TXN_SUCCESS'
+            THEN 'Payment Successful'
+        WHEN a.txn_status = 'TXN_FAILURE'
+            THEN 'Payment Failed'
+        WHEN a.txn_status = 'PENDING'
+            THEN 'Payment Pending'
+        WHEN a.txn_status IS NULL OR a.txn_status = ''
+            THEN 'Payment Status Not Available'
+        ELSE 'Payment Status Under Review'
+    END AS payment_status,
+
+    a.amount AS payment_amount,
+    a.payment_date,
+
+    -- Verification status
+    CASE
+        WHEN a.verify_status = 1 THEN 'Verified'
+        WHEN a.verify_status = 0 THEN 'Not Verified'
+        ELSE 'Verification Pending'
+    END AS verification_status,
+
+    -- Refund status
+    CASE
+        WHEN a.refund_status = 1 THEN 'Refund Processed'
+        WHEN a.refund_status = 0 THEN 'No Refund Requested'
+        ELSE 'Refund Status Under Review'
+    END AS refund_status,
+
+    -- Feedback status
+    CASE
+        WHEN a.feedback_status = 1 THEN 'Feedback Submitted'
+        WHEN a.feedback_status = 0 THEN 'Feedback Not Submitted'
+        ELSE 'Feedback Status Not Available'
+    END AS feedback_status,
+
+    -- Tracking
+    a.trackingno AS tracking_number
+
+FROM dbowdb18a5zvzr.rti_apply_nows AS a
+
+LEFT JOIN dbowdb18a5zvzr.rti_form_subcategories AS sc
+    ON a.sub_cat_id = sc.sub_cat_id
+
+LEFT JOIN dbowdb18a5zvzr.rti_status AS st
+    ON a.status = st.id
+
+WHERE a.user_id = %s
+
+ORDER BY a.created_at DESC
+LIMIT 20
 Admin setting  
 2)Global setting 
     a)Admin can configure Schedule any type of user delete all data automatically configure days from UI 

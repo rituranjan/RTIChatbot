@@ -1,0 +1,10 @@
+# Optional overlay for local Windows dev only (not used on Ubuntu/Linux servers).
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d --build
+#
+# Maps the host C: drive read-only at /host_c inside the backend container.
+# Add /host_c/... to APPROVED_FOLDER_ROOTS in backend/.env if you index host paths.
+
+services:
+  backend:
+    volumes:
+      - C:/:/host_c:ro
