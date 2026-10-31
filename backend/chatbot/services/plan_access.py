@@ -64,6 +64,20 @@ def merged_access(config=None):
             language_enabled = bool(base.get("language_enabled", False))
         else:
             language_enabled = bool(lang_on)
+        kw_on = raw.get("sql_keyword_enabled")
+        if isinstance(kw_on, str):
+            sql_keyword_enabled = kw_on.strip().lower() not in ("0", "false", "no", "off")
+        elif kw_on is None:
+            sql_keyword_enabled = bool(base.get("sql_keyword_enabled", True))
+        else:
+            sql_keyword_enabled = bool(kw_on)
+        sem_on = raw.get("semantic_sql_enabled")
+        if isinstance(sem_on, str):
+            semantic_sql_enabled = sem_on.strip().lower() not in ("0", "false", "no", "off")
+        elif sem_on is None:
+            semantic_sql_enabled = bool(base.get("semantic_sql_enabled", True))
+        else:
+            semantic_sql_enabled = bool(sem_on)
         result[key] = {
             "days": max(0, min(3650, day_value)),
             "models": models[:40],
@@ -74,6 +88,8 @@ def merged_access(config=None):
             "cached_tokens": number("cached_tokens", 0),
             "website_max_pages": number("website_max_pages", base.get("website_max_pages", 1), raw),
             "language_enabled": language_enabled,
+            "sql_keyword_enabled": sql_keyword_enabled,
+            "semantic_sql_enabled": semantic_sql_enabled,
             "concurrent_users": number("concurrent_users", base.get("concurrent_users", 0), raw),
             "max_embed_domains": number("max_embed_domains", base.get("max_embed_domains", 0), raw),
             "limit_message": (message or base["limit_message"])[:2000],
@@ -118,6 +134,8 @@ def clean_plan_access(incoming):
             "cached_tokens": _whole(raw.get("cached_tokens"), f"{label} cached tokens", 100_000_000),
             "website_max_pages": _whole(raw.get("website_max_pages"), f"{label} website RAG page limit", 10_000),
             "language_enabled": bool(raw.get("language_enabled")),
+            "sql_keyword_enabled": bool(raw.get("sql_keyword_enabled", True)),
+            "semantic_sql_enabled": bool(raw.get("semantic_sql_enabled", True)),
             "concurrent_users": _whole(raw.get("concurrent_users"), f"{label} concurrent users", 10_000),
             "max_embed_domains": _whole(raw.get("max_embed_domains"), f"{label} embed domains", 10_000),
             "limit_message": message[:2000],
@@ -164,6 +182,14 @@ def assert_website_rag_quota(owner, adding: int = 1) -> None:
 
 def language_enabled_for(user) -> bool:
     return bool(rules_for(user).get("language_enabled"))
+
+
+def sql_keyword_enabled_for(user) -> bool:
+    return bool(rules_for(user).get("sql_keyword_enabled", True))
+
+
+def semantic_sql_enabled_for(user) -> bool:
+    return bool(rules_for(user).get("semantic_sql_enabled", True))
 
 
 def concurrent_users_for(user) -> int:
@@ -430,6 +456,8 @@ def my_plan_payload(user) -> dict:
             "max_embed_domains": max_embed_domains_for(user),
             "input_tokens_scope": "per_request",
             "output_tokens_scope": "per_request",
+            "sql_keyword_enabled": bool(rules.get("sql_keyword_enabled", True)),
+            "semantic_sql_enabled": bool(rules.get("semantic_sql_enabled", True)),
         },
         "usage": {
             "requests": usage.requests,

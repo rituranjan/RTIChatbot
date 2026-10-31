@@ -8,7 +8,7 @@ const MENUS = [
       { id: "websites", label: "Website RAG" },
       { id: "files", label: "Files" },
       { id: "databases", label: "Databases" },
-      { id: "sql", label: "SQL keywords" },
+      { id: "sql-studio", label: "SQL & natural language" },
     ],
   },
   {

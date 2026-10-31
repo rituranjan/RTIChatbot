@@ -14,6 +14,19 @@ from .account_views import AccountDetailView, AccountListView, AccountProvisionV
 from .settings_views import AdminPurgeView, AdminSettingsView, MyPlanView, OpenRouterModelsView
 from .website_views import WebSourceViewSet
 from .web_rag_page_views import WebRagPageViewSet
+from .semantic_views import (
+    SemanticBootstrapView,
+    SemanticColumnViewSet,
+    SemanticDiscoverView,
+    SemanticEngineView,
+    SemanticExampleViewSet,
+    SemanticExportView,
+    SemanticPlatformSettingsView,
+    SemanticPreviewView,
+    SemanticRelationshipViewSet,
+    SemanticSynonymViewSet,
+    SemanticTableViewSet,
+)
 from .views import (
     ChatView,
     ConversationViewSet,
@@ -39,6 +52,11 @@ router.register("sql-queries", SqlKeywordQueryViewSet, basename="sql-query")
 router.register("intake", IntakeQuestionViewSet, basename="intake")
 router.register("websites", WebSourceViewSet, basename="website")
 router.register("web-rag-pages", WebRagPageViewSet, basename="web-rag-page")
+router.register("semantic/tables", SemanticTableViewSet, basename="semantic-table")
+router.register("semantic/columns", SemanticColumnViewSet, basename="semantic-column")
+router.register("semantic/synonyms", SemanticSynonymViewSet, basename="semantic-synonym")
+router.register("semantic/relationships", SemanticRelationshipViewSet, basename="semantic-relationship")
+router.register("semantic/examples", SemanticExampleViewSet, basename="semantic-example")
 
 urlpatterns = [
     path("auth/register/", RegisterView.as_view()),
@@ -62,6 +80,12 @@ urlpatterns = [
     path("admin-settings/", AdminSettingsView.as_view()),
     path("admin-settings/models/", OpenRouterModelsView.as_view()),
     path("admin-settings/purge/", AdminPurgeView.as_view()),
+    path("semantic/engine/", SemanticEngineView.as_view()),
+    path("semantic/platform/", SemanticPlatformSettingsView.as_view()),
+    path("semantic/bootstrap/", SemanticBootstrapView.as_view()),
+    path("semantic/export/", SemanticExportView.as_view()),
+    path("semantic/preview/", SemanticPreviewView.as_view()),
+    path("semantic/discover/", SemanticDiscoverView.as_view()),
     path("my-plan/", MyPlanView.as_view()),
     path("admin/accounts/", AccountListView.as_view()),
     path("admin/accounts/<int:user_id>/", AccountDetailView.as_view()),

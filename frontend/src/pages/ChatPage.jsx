@@ -11,7 +11,7 @@ import DatabasesPage from "./DatabasesPage";
 import FilesPage from "./FilesPage";
 import InsightsPage from "./InsightsPage";
 import QuestionsPage from "./QuestionsPage";
-import SqlKeywordsPage from "./SqlKeywordsPage";
+import SqlQueryStudioPage from "./SqlQueryStudioPage";
 import AdminSettingsPage from "./AdminSettingsPage";
 import ModelPage from "./ModelPage";
 import WorkspaceBar from "../components/WorkspaceBar";
@@ -35,7 +35,7 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
   const workspaceKey = acting?.id || "self";
 
   useEffect(() => {
-    if (!admin && ["files", "databases", "sql", "embed", "websites", "settings"].includes(section)) {
+    if (!admin && ["files", "databases", "sql-studio", "embed", "websites", "settings"].includes(section)) {
       setSection("chat");
     }
   }, [admin, section]);
@@ -238,7 +238,13 @@ export default function ChatPage({ user, onLogout, theme, setTheme }) {
           {section === "websites" && <WebsitesPage />}
           {section === "files" && <FilesPage />}
           {section === "databases" && <DatabasesPage />}
-          {section === "sql" && <SqlKeywordsPage />}
+          {(section === "sql-studio" || section === "sql" || section === "semantic-sql") && (
+            <SqlQueryStudioPage
+              defaultTab={
+                section === "semantic-sql" ? "test" : section === "sql" ? "keywords" : "setup"
+              }
+            />
+          )}
           {section === "questions" && <QuestionsPage />}
           {section === "embed" && (
             <section className="studio">

@@ -44,6 +44,8 @@ function blankAccess() {
         cached_tokens: 0,
         website_max_pages: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
         language_enabled: plan.id !== "basic",
+        sql_keyword_enabled: true,
+        semantic_sql_enabled: true,
         concurrent_users: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
         max_embed_domains: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
         limit_message: `You have reached the ${plan.label} plan limit for this month.`,
@@ -307,6 +309,8 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
               cached_tokens: Number(access[plan.id].cached_tokens) || 0,
               website_max_pages: Number(access[plan.id].website_max_pages) || 0,
               language_enabled: Boolean(access[plan.id].language_enabled),
+              sql_keyword_enabled: Boolean(access[plan.id].sql_keyword_enabled),
+              semantic_sql_enabled: Boolean(access[plan.id].semantic_sql_enabled),
               concurrent_users: Number(access[plan.id].concurrent_users) || 0,
               max_embed_domains: Number(access[plan.id].max_embed_domains) || 0,
             },
@@ -696,6 +700,22 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                     onChange={(event) => updatePlan(activePlan.id, "language_enabled", event.target.checked)}
                   />
                   Enable chat language dropdown
+                </label>
+                <label className="checkbox-row plan-language-toggle">
+                  <input
+                    type="checkbox"
+                    checked={activeAccess.sql_keyword_enabled !== false}
+                    onChange={(event) => updatePlan(activePlan.id, "sql_keyword_enabled", event.target.checked)}
+                  />
+                  SQL keyword queries in chat
+                </label>
+                <label className="checkbox-row plan-language-toggle">
+                  <input
+                    type="checkbox"
+                    checked={activeAccess.semantic_sql_enabled !== false}
+                    onChange={(event) => updatePlan(activePlan.id, "semantic_sql_enabled", event.target.checked)}
+                  />
+                  Natural language (Semantic Text-to-SQL) in chat
                 </label>
                 <label className="field">
                   Concurrent embed users

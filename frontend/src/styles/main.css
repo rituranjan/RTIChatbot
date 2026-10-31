@@ -992,6 +992,21 @@ html.embed-page #root {
 .website-rag-empty {
   padding: 8px 0;
 }
+.semantic-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.semantic-preview pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  overflow: auto;
+  max-height: 320px;
+  font-size: 12px;
+}
 .studio-form h2 {
   grid-column: span 2;
   margin: 0 0 4px;

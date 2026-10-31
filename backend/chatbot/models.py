@@ -423,6 +423,178 @@ class WebRagPage(models.Model):
         ]
 
 
+def default_semantic_sql_settings():
+    return {
+        "platform_enabled": True,
+        "default_max_rows": 40,
+        "default_timeout_seconds": 12,
+        "use_llm_understanding": True,
+        "fallback_keyword_sql": True,
+    }
+
+
+class SemanticEngineConfig(models.Model):
+    """Per-workspace (owner) semantic text-to-SQL settings."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="semantic_engine"
+    )
+    connection = models.ForeignKey(
+        "DataConnection",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="semantic_engines",
+    )
+    report_query = models.ForeignKey(
+        "SqlKeywordQuery",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="semantic_reports",
+        help_text="Canonical SELECT from SQL keywords; uses that query's database connection.",
+    )
+    enabled = models.BooleanField(default=False)
+    database_name = models.CharField(max_length=120, blank=True, default="")
+    base_from_sql = models.TextField(blank=True, default="")
+    tenant_filter_column = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text="Optional physical column (e.g. a.user_id) always filtered to workspace.",
+    )
+    max_rows = models.PositiveIntegerField(default=40)
+    timeout_seconds = models.PositiveIntegerField(default=12)
+    use_llm_understanding = models.BooleanField(default=True)
+    fallback_keyword_sql = models.BooleanField(default=True)
+    temperature = models.FloatField(default=0.0)
+    MODE_KEYWORDS = "keywords"
+    MODE_SEMANTIC = "semantic"
+    MODE_CHOICES = [(MODE_KEYWORDS, "keywords"), (MODE_SEMANTIC, "semantic")]
+    chat_sql_mode = models.CharField(max_length=16, choices=MODE_CHOICES, default=MODE_KEYWORDS)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class SemanticTable(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="semantic_tables"
+    )
+    database_name = models.CharField(max_length=120)
+    table_name = models.CharField(max_length=120)
+    table_alias = models.CharField(max_length=16, blank=True, default="")
+    display_name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["table_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "database_name", "table_name"],
+                name="chatbot_sem_table_owner_db_name",
+            )
+        ]
+
+
+class SemanticColumn(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    semantic_table = models.ForeignKey(
+        SemanticTable, on_delete=models.CASCADE, related_name="columns"
+    )
+    physical_column = models.CharField(max_length=200)
+    sql_alias = models.CharField(max_length=200, blank=True, default="")
+    display_name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    data_type = models.CharField(max_length=64, blank=True, default="string")
+    searchable = models.BooleanField(default=True)
+    filterable = models.BooleanField(default=True)
+    sortable = models.BooleanField(default=True)
+    groupable = models.BooleanField(default=False)
+    aggregatable = models.BooleanField(default=False)
+    sensitive = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["physical_column"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["semantic_table", "physical_column"],
+                name="chatbot_sem_col_table_phys",
+            )
+        ]
+
+
+class SemanticSynonym(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    semantic_column = models.ForeignKey(
+        SemanticColumn, on_delete=models.CASCADE, related_name="synonyms"
+    )
+    synonym = models.CharField(max_length=200)
+    language_code = models.CharField(max_length=16, blank=True, default="en")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["synonym"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["semantic_column", "synonym", "language_code"],
+                name="chatbot_sem_syn_col_lang",
+            )
+        ]
+
+
+class SemanticRelationship(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="semantic_relationships"
+    )
+    source_table = models.CharField(max_length=120)
+    source_column = models.CharField(max_length=200)
+    target_table = models.CharField(max_length=120)
+    target_column = models.CharField(max_length=200)
+    join_type = models.CharField(max_length=16, default="LEFT")
+    join_condition = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["source_table"]
+
+
+class SemanticExample(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="semantic_examples"
+    )
+    question = models.TextField()
+    expected_columns = models.JSONField(default=list, blank=True)
+    expected_filters = models.JSONField(default=list, blank=True)
+    expected_query_pattern = models.TextField(blank=True, default="")
+    language_code = models.CharField(max_length=16, blank=True, default="en")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class SemanticSchemaSnapshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="semantic_snapshots"
+    )
+    connection = models.ForeignKey(
+        DataConnection, on_delete=models.CASCADE, related_name="semantic_snapshots"
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    reviewed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 def default_plan_days():
     return {"basic": 0, "silver": 0, "gold": 0, "diamond": 0}
 
@@ -432,6 +604,8 @@ def default_plan_access():
     labels = {"basic": "Basic", "silver": "Silver", "gold": "Gold", "diamond": "Diamond"}
     website_rag_sites = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
     language_on = {"basic": False, "silver": True, "gold": True, "diamond": True}
+    sql_keyword_on = {"basic": True, "silver": True, "gold": True, "diamond": True}
+    semantic_sql_on = {"basic": True, "silver": True, "gold": True, "diamond": True}
     concurrent = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
     max_domains = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
     return {
@@ -444,6 +618,8 @@ def default_plan_access():
             "cached_tokens": 0,
             "website_max_pages": website_rag_sites[key],
             "language_enabled": language_on[key],
+            "sql_keyword_enabled": sql_keyword_on[key],
+            "semantic_sql_enabled": semantic_sql_on[key],
             "concurrent_users": concurrent[key],
             "max_embed_domains": max_domains[key],
             "limit_message": f"You have reached the {labels[key]} plan limit for this month.",
@@ -467,6 +643,7 @@ class AppSetting(models.Model):
     last_purge_at = models.DateTimeField(null=True, blank=True)
     llm_policy = models.JSONField(default=dict, blank=True)
     language_settings = models.JSONField(default=dict, blank=True)
+    semantic_sql_settings = models.JSONField(default=default_semantic_sql_settings, blank=True)
 
     class Meta:
         verbose_name = "app setting"

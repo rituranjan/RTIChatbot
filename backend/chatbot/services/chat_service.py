@@ -9,7 +9,6 @@ from .plan_access import limit_reply, model_for
 from .languages import language_block_message
 from .profile_service import assert_profile
 from .retrieval_service import accessible_documents, retrieve
-from .sql_lookup import lookup_keywords
 from .admin_settings import maybe_purge, not_found_reply
 from .web_retrieve import retrieve_websites
 
@@ -57,7 +56,9 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app", cha
 
     sources = retrieve(owner, user_text, top_k=settings.RETRIEVAL_TOP_K)
     web_sources = retrieve_websites(owner, user_text, top_k=settings.RETRIEVAL_TOP_K)
-    lookups = lookup_keywords(owner, user_text)
+    from .chat_sql_router import resolve_db_lookups
+
+    lookups = resolve_db_lookups(owner, user_text)
     has_documents = accessible_documents(owner).exists()
     has_web = (
         WebSource.objects.filter(owner=owner, enabled=True).exclude(chunk_count=0).exists()

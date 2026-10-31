@@ -26,15 +26,19 @@ _FORBIDDEN = (
     "pragma",
     "copy",
     "call",
-    "into",
 )
 
 
 def assert_select(sql: str) -> str:
     """Allow one read-only SELECT. Reject anything that can change data."""
-    text = (sql or "").strip()
-    if text.endswith(";"):
-        text = text[:-1].strip()
+    try:
+        from .semantic.sql_normalize import normalize_report_sql
+
+        text = normalize_report_sql(sql)
+    except ValueError:
+        text = (sql or "").strip()
+        if text.endswith(";"):
+            text = text[:-1].strip()
     if not text:
         raise ValueError("SQL query is empty.")
     if ";" in text:
@@ -45,7 +49,7 @@ def assert_select(sql: str) -> str:
     words = set(lowered.replace("(", " ").replace(")", " ").split())
     blocked = words.intersection(_FORBIDDEN)
     if blocked:
-        raise ValueError("Only a read-only SELECT is allowed.")
+        raise ValueError(f"Only a read-only SELECT is allowed ({', '.join(sorted(blocked))}).")
     if "@keyword".count("@") and text.count("@keyword") > 1:
         raise ValueError("Use @keyword at most once.")
     return text

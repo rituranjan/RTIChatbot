@@ -15,16 +15,35 @@ export default function SqlKeywordsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [preview, setPreview] = useState("");
+  const [semantic, setSemantic] = useState(null);
 
   async function load() {
-    const [connectionData, queryData] = await Promise.all([api.listConnections(), api.listSqlQueries()]);
+    const [connectionData, queryData, engine] = await Promise.all([
+      api.listConnections(),
+      api.listSqlQueries(),
+      api.semanticEngine().catch(() => null),
+    ]);
     setConnections(rowsOf(connectionData));
     setRows(rowsOf(queryData));
+    setSemantic(engine);
   }
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
   }, []);
+
+  const semCfg = semantic?.config || {};
+
+  async function saveSemantic(patch) {
+    setError("");
+    try {
+      const data = await api.saveSemanticEngine(patch);
+      setSemantic((prev) => ({ ...prev, config: data }));
+      setNotice("Semantic SQL settings saved.");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   function payload() {
     return {
@@ -72,6 +91,9 @@ export default function SqlKeywordsPage() {
         setEditing(null);
         setForm(EMPTY);
       }
+      if (semCfg.report_query === row.id) {
+        await saveSemantic({ report_query: null });
+      }
       await load();
     } catch (err) {
       setError(err.message);
@@ -96,14 +118,52 @@ export default function SqlKeywordsPage() {
         <div>
           <h1>SQL keywords</h1>
           <p className="muted">
-            Save a SELECT here. The next chat message uses the queries you saved.
-            If the message contains a keyword, only those queries run. Otherwise every enabled query runs.
-            Use @keyword once when the query should receive the main word from the question.
+            Connect a database under Databases, save SELECT queries here, then pick one as the semantic report
+            query. Chat uses the same connection string—nothing is hardcoded in the app.
           </p>
         </div>
       </header>
       {error && <div className="form-error">{error}</div>}
       {notice && <p className="form-ok">{notice}</p>}
+
+      <div className="studio-card studio-form">
+        <h2>Semantic Text-to-SQL</h2>
+        <p className="muted span-2">
+          Dictionary columns: {semantic?.column_count ?? 0}. Configure synonyms under Knowledge → Semantic
+          Text-to-SQL.
+        </p>
+        <label className="check-row span-2">
+          <input
+            type="checkbox"
+            checked={Boolean(semCfg.enabled)}
+            onChange={(event) => saveSemantic({ enabled: event.target.checked })}
+          />
+          Enable semantic SQL for this workspace (uses database from report query below)
+        </label>
+        <label className="span-2">
+          Report SQL query (canonical SELECT)
+          <select
+            value={semCfg.report_query || ""}
+            onChange={(event) => saveSemantic({ report_query: event.target.value || null })}
+          >
+            <option value="">Choose a saved query</option>
+            {rows.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} ({item.connection_name})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={semCfg.fallback_keyword_sql !== false}
+            onChange={(event) => saveSemantic({ fallback_keyword_sql: event.target.checked })}
+          />
+          Fallback to keyword SQL below
+        </label>
+      </div>
+
       <form className="studio-card studio-form" onSubmit={save}>
         <label>
           Name
@@ -154,7 +214,11 @@ export default function SqlKeywordsPage() {
           <tbody>
             {rows.map((row) => (
               <tr key={row.id}>
-                <td>{row.name}{!row.enabled && <span className="muted"> · off</span>}</td>
+                <td>
+                  {row.name}
+                  {!row.enabled && <span className="muted"> · off</span>}
+                  {semCfg.report_query === row.id && <span className="muted"> · semantic report</span>}
+                </td>
                 <td>{row.connection_name}</td>
                 <td>{(row.keywords || []).join(", ")}</td>
                 <td className="row-actions">

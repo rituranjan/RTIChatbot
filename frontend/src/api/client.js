@@ -32,10 +32,15 @@ async function request(path, { method = "GET", body, headers = {}, isForm = fals
     data = text;
   }
   if (!res.ok) {
-    const detail =
-      (data && (data.detail || data.error)) || `Request failed (${res.status})`;
+    let detail =
+      (data && (data.detail || data.error || data.run_error)) || `Request failed (${res.status})`;
+    if (typeof data === "object" && data && !data.detail && !data.error) {
+      const first = Object.values(data)[0];
+      if (Array.isArray(first) && first[0]) detail = String(first[0]);
+    }
     const error = new Error(detail);
     error.status = res.status;
+    error.payload = data;
     if (res.status >= 500 && !path.includes("/api/client-errors")) {
       reportUiError(error, { path });
     }
@@ -156,6 +161,30 @@ export const api = {
   reindexWebRagPage: (id) => request(`/api/web-rag-pages/${id}/reindex/`, { method: "POST" }),
   saveWebRagPage: (id, payload) =>
     request(`/api/web-rag-pages/${id}/`, { method: "PATCH", body: payload }),
+
+  semanticEngine: () => request("/api/semantic/engine/"),
+  saveSemanticEngine: (payload) => request("/api/semantic/engine/", { method: "PATCH", body: payload }),
+  semanticPlatform: () => request("/api/semantic/platform/"),
+  saveSemanticPlatform: (payload) => request("/api/semantic/platform/", { method: "PATCH", body: payload }),
+  semanticBootstrap: (replace = false) =>
+    request("/api/semantic/bootstrap/", { method: "POST", body: { replace } }),
+  semanticExport: () => request("/api/semantic/export/"),
+  semanticPreview: (question) => request("/api/semantic/preview/", { method: "POST", body: { question } }),
+  semanticDiscover: (payload) => request("/api/semantic/discover/", { method: "POST", body: payload }),
+  listSemanticTables: () => request("/api/semantic/tables/"),
+  listSemanticColumns: () => request("/api/semantic/columns/"),
+  saveSemanticColumn: (payload, id) =>
+    request(id ? `/api/semantic/columns/${id}/` : "/api/semantic/columns/", {
+      method: id ? "PATCH" : "POST",
+      body: payload,
+    }),
+  deleteSemanticColumn: (id) => request(`/api/semantic/columns/${id}/`, { method: "DELETE" }),
+  saveSemanticSynonym: (payload, id) =>
+    request(id ? `/api/semantic/synonyms/${id}/` : "/api/semantic/synonyms/", {
+      method: id ? "PATCH" : "POST",
+      body: payload,
+    }),
+  deleteSemanticSynonym: (id) => request(`/api/semantic/synonyms/${id}/`, { method: "DELETE" }),
 
   listConnections: () => request("/api/connections/"),
   saveConnection: (payload, id) =>
