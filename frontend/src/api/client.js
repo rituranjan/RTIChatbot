@@ -149,6 +149,14 @@ export const api = {
   deleteWebsite: (id) => request(`/api/websites/${id}/`, { method: "DELETE" }),
   recrawlWebsite: (id) => request(`/api/websites/${id}/recrawl/`, { method: "POST" }),
 
+  listWebRagPages: () => request("/api/web-rag-pages/"),
+  bulkWebRagPages: (paste) =>
+    request("/api/web-rag-pages/bulk/", { method: "POST", body: { paste } }),
+  deleteWebRagPage: (id) => request(`/api/web-rag-pages/${id}/`, { method: "DELETE" }),
+  reindexWebRagPage: (id) => request(`/api/web-rag-pages/${id}/reindex/`, { method: "POST" }),
+  saveWebRagPage: (id, payload) =>
+    request(`/api/web-rag-pages/${id}/`, { method: "PATCH", body: payload }),
+
   listConnections: () => request("/api/connections/"),
   saveConnection: (payload, id) =>
     request(id ? `/api/connections/${id}/` : "/api/connections/", {

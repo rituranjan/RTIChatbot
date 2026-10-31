@@ -18,3 +18,5 @@ drf-spectacular[sidecar]==0.28.0
 beautifulsoup4==4.12.3
 qdrant-client==1.14.3
 fastembed==0.6.1
+PyMySQL
+cryptography

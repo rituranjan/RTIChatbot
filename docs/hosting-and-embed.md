@@ -177,6 +177,29 @@ On the other website:
 
 The Embed page on this app is the same widget: open `/embed?bot=CHATBOT_ID` and send a question there first. If that page works, the snippet on the other site uses the same chat.
 
+## 7. Private chat for many visitors (no login)
+
+When you add `widget.js` to a public website, each visitor gets their **own** chat thread. Messages from one person are **not** shown to another.
+
+How it works:
+
+1. The chat runs inside an iframe from your chatbot host (for example `https://chat.example.com/embed?bot=YOUR_ID`).
+2. The first time someone opens it, the browser creates a random **visitor id** and stores it in that browser, scoped to your bot id.
+3. Every message sends that id to the API. The server keeps **one conversation per (bot, visitor id)** and only reads/writes messages on that row.
+4. The AI uses **that conversation’s history** only, plus your account’s shared documents and websites (RAG). Everyone shares the same knowledge base; they do **not** share chat history.
+
+One hundred people on the site at once means one hundred separate visitor ids and one hundred separate conversations (different browsers or devices).
+
+**Same browser, two people:** Two people on one computer sharing one browser profile share one visitor id. Use separate profiles or private windows if that matters.
+
+**Production URL:** Use your public HTTPS host in the snippet, not `localhost`:
+
+```html
+<script src="https://chat.example.com/widget.js" data-bot="YOUR_BOT_ID"></script>
+```
+
+**Limits:** Monthly chat counts and plan settings apply to the **bot owner’s account**, shared across all embed visitors.
+
 ## Troubleshooting
 
 | What you see | What to change |

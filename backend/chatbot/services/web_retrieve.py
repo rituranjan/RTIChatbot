@@ -2,7 +2,7 @@ import logging
 
 from django.conf import settings
 
-from ..models import WebSource
+from ..models import WebRagPage, WebSource
 from .web_embed import embed_query
 from .web_vectors import search_websites
 
@@ -16,6 +16,11 @@ def retrieve_websites(user, query: str, top_k=None):
         return []
     website_ids = list(
         WebSource.objects.filter(owner=user, enabled=True)
+        .exclude(chunk_count=0)
+        .values_list("id", flat=True)
+    )
+    website_ids.extend(
+        WebRagPage.objects.filter(owner=user, enabled=True)
         .exclude(chunk_count=0)
         .values_list("id", flat=True)
     )

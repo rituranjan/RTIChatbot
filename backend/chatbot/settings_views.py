@@ -8,6 +8,7 @@ from .services.admin_settings import purge_expired_data, save_settings, settings
 from .services.llm_service import LLMError
 from .services.openrouter_service import list_models
 from .services.plan_access import model_for, my_plan_payload, set_selected_model
+from .services.embed_domains import save_embed_domains
 
 
 class AdminSettingsView(APIView):
@@ -58,6 +59,9 @@ class MyPlanView(APIView):
         user = data_user(request)
         data = request.data if isinstance(request.data, dict) else {}
         try:
+            if "embed_domains" in data:
+                save_embed_domains(user, data.get("embed_domains"))
+                return Response(my_plan_payload(user))
             if "selected_model" not in data and "selected_language" not in data:
                 raise ValueError("Nothing to save.")
             lang = data["selected_language"] if "selected_language" in data else None

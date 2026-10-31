@@ -20,7 +20,12 @@
     if (!document.body || document.getElementById("chatbot-widget-frame")) return;
     var frame = document.createElement("iframe");
     frame.id = "chatbot-widget-frame";
-    frame.src = origin + "/embed?bot=" + encodeURIComponent(bot);
+    var site = "";
+    try {
+      site = window.location.origin || "";
+    } catch (ignore) {}
+    var siteQuery = site ? "&site=" + encodeURIComponent(site) : "";
+    frame.src = origin + "/embed?bot=" + encodeURIComponent(bot) + siteQuery;
     frame.title = "Chat";
     frame.setAttribute("allowtransparency", "true");
     frame.setAttribute("allow", "clipboard-write");

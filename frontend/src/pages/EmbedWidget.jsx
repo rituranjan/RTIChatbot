@@ -6,8 +6,12 @@ import { reportUiError } from "../reportUiError";
 
 let memoryVisitor = "";
 
-function visitorId() {
-  const key = "chatbot-visitor";
+function visitorStorageKey(botId) {
+  return `chatbot-visitor-${botId || "default"}`;
+}
+
+function visitorId(botId) {
+  const key = visitorStorageKey(botId);
   try {
     let id = localStorage.getItem(key);
     if (!id) {
@@ -36,6 +40,27 @@ function newId() {
   bytes[6] = (bytes[6] & 15) | 64;
   bytes[8] = (bytes[8] & 63) | 128;
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function embedParentSite() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const site = params.get("site") || "";
+    if (site) return site;
+    if (window.parent !== window) {
+      return document.referrer || "";
+    }
+  } catch {
+    /* ignored */
+  }
+  return "";
+}
+
+function embedHeaders(extra = {}) {
+  const headers = { ...extra };
+  const parent = embedParentSite();
+  if (parent) headers["X-Embed-Parent"] = parent;
+  return headers;
 }
 
 function notifyParent(open) {
@@ -76,8 +101,12 @@ export default function EmbedWidget({ botId, mode }) {
       setError("Missing chatbot id. Use /embed?bot=YOUR_ID");
       return;
     }
-    const visitor = visitorId();
-    fetch(`/api/embed/${botId}/?visitor_id=${encodeURIComponent(visitor)}`)
+    const visitor = visitorId(botId);
+    const parent = embedParentSite();
+    const siteQuery = parent ? `&site=${encodeURIComponent(parent)}` : "";
+    fetch(`/api/embed/${botId}/?visitor_id=${encodeURIComponent(visitor)}${siteQuery}`, {
+      headers: embedHeaders(),
+    })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -118,9 +147,9 @@ export default function EmbedWidget({ botId, mode }) {
     try {
       const res = await fetch(`/api/embed/${botId}/chat/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: embedHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
-          visitor_id: visitorId(),
+          visitor_id: visitorId(botId),
           message,
           language: languageOn ? chatLanguage : "",
         }),
@@ -146,8 +175,8 @@ export default function EmbedWidget({ botId, mode }) {
     try {
       const res = await fetch(`/api/embed/${botId}/profile/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visitor_id: visitorId(), answers }),
+        headers: embedHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ visitor_id: visitorId(botId), answers }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || "Could not save your details.");

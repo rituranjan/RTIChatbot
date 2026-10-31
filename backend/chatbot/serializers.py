@@ -11,6 +11,7 @@ from .models import (
     Message,
     SqlKeywordQuery,
     WebPage,
+    WebRagPage,
     WebSource,
 )
 
@@ -183,6 +184,35 @@ class WebSourceSerializer(serializers.ModelSerializer):
             "page_count",
             "chunk_count",
             "pages",
+            "created_at",
+            "updated_at",
+        )
+
+
+class WebRagPageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebRagPage
+        fields = (
+            "id",
+            "url",
+            "title",
+            "enabled",
+            "status",
+            "error",
+            "message",
+            "chunk_count",
+            "priority",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "title",
+            "status",
+            "error",
+            "message",
+            "chunk_count",
+            "priority",
             "created_at",
             "updated_at",
         )

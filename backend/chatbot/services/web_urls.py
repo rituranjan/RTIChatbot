@@ -1,5 +1,6 @@
 """URL checks for a same-site crawl. No network except the public-host lookup."""
 import ipaddress
+import re
 import socket
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -61,3 +62,33 @@ def assert_public_host(hostname: str) -> None:
             or ip.is_unspecified
         ):
             raise WebUrlError("That address is not a public website.")
+
+
+_URL_BODY = re.compile(r"https?://[^\s<>\"']+", re.I)
+
+
+def extract_urls_from_paste(text: str) -> list[str]:
+    """Pull http(s) URLs from free text, including URLs pasted back-to-back without spaces."""
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    chunks = re.split(r"(?=https?://)", raw, flags=re.I)
+    seen = set()
+    urls = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        match = _URL_BODY.match(chunk)
+        if not match:
+            continue
+        cand = match.group(0).rstrip(".,;)")
+        try:
+            cleaned = normalize_url(cand)
+        except WebUrlError:
+            continue
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        urls.append(cleaned)
+    return urls

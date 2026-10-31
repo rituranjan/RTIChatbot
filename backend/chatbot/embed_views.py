@@ -1,5 +1,6 @@
 import re
 
+from django.db import IntegrityError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
@@ -21,9 +22,35 @@ from .services.tenant_db import use_tenant
 from .services.chat_service import generate_reply
 from .services.llm_service import LLMError
 from .services.profile_service import profile_answers, public_questions, save_profile
+from .services.embed_concurrency import admit_embed_visitor
+from .services.embed_domains import verify_embed_parent
 from .services.languages import language_public_payload
 
 _VISITOR = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _embed_conversation(bot, visitor: str) -> Conversation:
+    """One private thread per (bot, visitor_id). Safe under concurrent embed users."""
+    try:
+        conversation, _created = Conversation.objects.get_or_create(
+            embed_bot=bot,
+            visitor_id=visitor,
+            defaults={
+                "owner_id": bot.owner_id,
+                "title": f"Widget · {bot.name}"[:200],
+            },
+        )
+        return conversation
+    except IntegrityError:
+        conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
+        if conversation:
+            return conversation
+        raise
+    except Exception:
+        conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
+        if conversation:
+            return conversation
+        raise
 
 
 def ensure_embed_bot(user):
@@ -62,6 +89,9 @@ class EmbedConfigView(APIView):
         bot = _bot_or_404(bot_id)
         if not bot:
             return Response({"detail": "Chatbot not found."}, status=status.HTTP_404_NOT_FOUND)
+        ok, msg = verify_embed_parent(bot.owner, request)
+        if not ok:
+            return Response({"detail": msg}, status=status.HTTP_403_FORBIDDEN)
         payload = _public_bot(bot)
         payload["language"] = language_public_payload(bot.owner)
         payload["questions"] = public_questions(bot.owner)
@@ -69,6 +99,9 @@ class EmbedConfigView(APIView):
         payload["messages"] = []
         payload["profile"] = None
         if _VISITOR.match(visitor):
+            allowed, busy = admit_embed_visitor(bot.owner, visitor, embed_bot=bot)
+            if not allowed:
+                return Response({"detail": busy}, status=status.HTTP_429_TOO_MANY_REQUESTS)
             with use_tenant(bot.owner):
                 conversation = Conversation.objects.filter(
                     embed_bot=bot, visitor_id=visitor
@@ -92,10 +125,19 @@ class EmbedChatView(APIView):
         if not bot:
             return Response({"detail": "Chatbot not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        ok, msg = verify_embed_parent(bot.owner, request)
+        if not ok:
+            return Response({"detail": msg}, status=status.HTTP_403_FORBIDDEN)
+
         visitor = str(request.data.get("visitor_id") or "").strip()
         user_text = str(request.data.get("message") or "").strip()
         if not _VISITOR.match(visitor):
             return Response({"detail": "Invalid visitor."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed, busy = admit_embed_visitor(bot.owner, visitor, embed_bot=bot)
+        if not allowed:
+            return Response({"detail": busy}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
         if not user_text:
             return Response({"detail": "Empty message."}, status=status.HTTP_400_BAD_REQUEST)
         if len(user_text) > 4000:
@@ -135,18 +177,21 @@ class EmbedProfileView(APIView):
         bot = _bot_or_404(bot_id)
         if not bot:
             return Response({"detail": "Chatbot not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        ok, msg = verify_embed_parent(bot.owner, request)
+        if not ok:
+            return Response({"detail": msg}, status=status.HTTP_403_FORBIDDEN)
+
         visitor = str(request.data.get("visitor_id") or "").strip()
         if not _VISITOR.match(visitor):
             return Response({"detail": "Invalid visitor."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed, busy = admit_embed_visitor(bot.owner, visitor, embed_bot=bot)
+        if not allowed:
+            return Response({"detail": busy}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
         with use_tenant(bot.owner):
-            conversation = Conversation.objects.filter(embed_bot=bot, visitor_id=visitor).first()
-            if conversation is None:
-                conversation = Conversation.objects.create(
-                    owner=bot.owner,
-                    embed_bot=bot,
-                    visitor_id=visitor,
-                    title=f"Widget · {bot.name}"[:200],
-                )
+            conversation = _embed_conversation(bot, visitor)
             try:
                 answers = save_profile(conversation, request.data.get("answers"))
             except ValueError as exc:

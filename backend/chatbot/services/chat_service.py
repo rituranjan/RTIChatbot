@@ -2,7 +2,7 @@ import logging
 
 from django.conf import settings
 
-from ..models import Message, WebSource
+from ..models import Message, WebRagPage, WebSource
 from .llm_gateway import build_grounded_user_prompt, complete_for_user
 from .llm_service import LLMError
 from .plan_access import limit_reply, model_for
@@ -61,10 +61,12 @@ def generate_reply(owner, conversation, user_text, strict=None, style="app", cha
     has_documents = accessible_documents(owner).exists()
     has_web = (
         WebSource.objects.filter(owner=owner, enabled=True).exclude(chunk_count=0).exists()
+        or WebRagPage.objects.filter(owner=owner, enabled=True).exclude(chunk_count=0).exists()
     )
-    crawling = WebSource.objects.filter(
-        owner=owner, enabled=True, status=WebSource.STATUS_CRAWLING
-    ).exists()
+    crawling = (
+        WebSource.objects.filter(owner=owner, enabled=True, status=WebSource.STATUS_CRAWLING).exists()
+        or WebRagPage.objects.filter(owner=owner, enabled=True, status=WebRagPage.STATUS_CRAWLING).exists()
+    )
 
     history = list(conversation.messages.order_by("created_at").values("role", "content"))
     prior_questions = [

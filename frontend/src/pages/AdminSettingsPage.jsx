@@ -42,8 +42,10 @@ function blankAccess() {
         input_tokens: 0,
         output_tokens: 0,
         cached_tokens: 0,
-        website_max_pages: { basic: 50, silver: 100, gold: 200, diamond: 400 }[plan.id],
+        website_max_pages: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
         language_enabled: plan.id !== "basic",
+        concurrent_users: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
+        max_embed_domains: { basic: 1, silver: 2, gold: 5, diamond: 10 }[plan.id],
         limit_message: `You have reached the ${plan.label} plan limit for this month.`,
       },
     ])
@@ -303,8 +305,10 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
               input_tokens: Number(access[plan.id].input_tokens) || 0,
               output_tokens: Number(access[plan.id].output_tokens) || 0,
               cached_tokens: Number(access[plan.id].cached_tokens) || 0,
-              website_max_pages: Number(access[plan.id].website_max_pages) || 1,
+              website_max_pages: Number(access[plan.id].website_max_pages) || 0,
               language_enabled: Boolean(access[plan.id].language_enabled),
+              concurrent_users: Number(access[plan.id].concurrent_users) || 0,
+              max_embed_domains: Number(access[plan.id].max_embed_domains) || 0,
             },
           ])
         ),
@@ -393,6 +397,7 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
           plan: editor.plan,
           password: editor.password,
           not_found_message: editor.not_found_message,
+          embed_domains: editor.embed_domains || [],
         });
         setNotice(`${editor.username} updated.`);
       } else {
@@ -674,11 +679,15 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                   Website RAG page limit
                   <input
                     type="number"
-                    min="1"
-                    max="400"
-                    value={activeAccess.website_max_pages ?? 300}
+                    min="0"
+                    max="10000"
+                    value={activeAccess.website_max_pages ?? 0}
                     onChange={(event) => updatePlan(activePlan.id, "website_max_pages", event.target.value)}
                   />
+                  <span className="muted">
+                    How many single pages each account may add in Website RAG (paste list). 0 = unlimited.
+                    Defaults: Basic 1, Silver 2, Gold 5, Diamond 10.
+                  </span>
                 </label>
                 <label className="checkbox-row plan-language-toggle">
                   <input
@@ -688,11 +697,40 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                   />
                   Enable chat language dropdown
                 </label>
+                <label className="field">
+                  Concurrent embed users
+                  <input
+                    type="number"
+                    min="0"
+                    max="10000"
+                    value={activeAccess.concurrent_users ?? 0}
+                    onChange={(event) => updatePlan(activePlan.id, "concurrent_users", event.target.value)}
+                  />
+                  <span className="muted">
+                    Max visitors chatting at once on the website widget (0 = unlimited). Defaults: Basic 1,
+                    Silver 2, Gold 5, Diamond 10.
+                  </span>
+                </label>
+                <label className="field">
+                  Embed domains allowed
+                  <input
+                    type="number"
+                    min="0"
+                    max="10000"
+                    value={activeAccess.max_embed_domains ?? 0}
+                    onChange={(event) => updatePlan(activePlan.id, "max_embed_domains", event.target.value)}
+                  />
+                  <span className="muted">
+                    How many parent website domains each account on this plan may register (0 = unlimited).
+                    Defaults: Basic 1, Silver 2, Gold 5, Diamond 10.
+                  </span>
+                </label>
               </div>
               <p className="muted">
                 Monthly request limits are Basic 10, Silver 20, Gold 30, and Diamond 40. Input and output numbers
-                apply to each single chat call only (0 turns that limit off). Website page limit caps how many pages
-                are indexed per site for RAG (1–400). Turn on chat languages per plan to show the language list in chat.
+                apply to each single chat call only (0 turns that limit off). Website RAG page limit caps how many
+                pasted single URLs an account may index. Concurrent embed users limits anonymous widget chats
+                plan (set the user&apos;s plan under Users).
               </p>
               <label className="field">
                 Message when a limit is reached
@@ -857,7 +895,7 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
             <button
               type="button"
               className="primary"
-              onClick={() => setEditor({ username: "", email: "", password: "", plan: "basic", not_found_message: "" })}
+              onClick={() => setEditor({ username: "", email: "", password: "", plan: "basic", not_found_message: "", embed_domains: [] })}
             >
               New account
             </button>
@@ -893,6 +931,8 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                           password: "",
                           plan: row.plan || "basic",
                           not_found_message: row.not_found_message || "",
+                          embed_domains: Array.isArray(row.embed_domains) ? row.embed_domains : [],
+                          domain_input: "",
                         })
                       }
                     >
@@ -997,6 +1037,75 @@ export default function AdminSettingsPage({ actingId, onDirectoryChange, onActin
                   onChange={(event) => setEditor({ ...editor, not_found_message: event.target.value })}
                 />
               </label>
+            )}
+            {editor.id && (
+              <div className="field embed-domains-editor">
+                <span className="field-label">Website embed domains</span>
+                <p className="muted">Domains allowed to host the chat script for this account.</p>
+                <div className="domain-add-row">
+                  <input
+                    value={editor.domain_input || ""}
+                    placeholder="www.example.com"
+                    onChange={(event) => setEditor({ ...editor, domain_input: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        const value = (editor.domain_input || "").trim();
+                        if (!value) return;
+                        const list = editor.embed_domains || [];
+                        if (list.includes(value)) {
+                          setEditor({ ...editor, domain_input: "" });
+                          return;
+                        }
+                        setEditor({
+                          ...editor,
+                          embed_domains: [...list, value],
+                          domain_input: "",
+                        });
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => {
+                      const value = (editor.domain_input || "").trim();
+                      if (!value) return;
+                      const list = editor.embed_domains || [];
+                      if (list.includes(value)) {
+                        setEditor({ ...editor, domain_input: "" });
+                        return;
+                      }
+                      setEditor({
+                        ...editor,
+                        embed_domains: [...list, value],
+                        domain_input: "",
+                      });
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <ul className="domain-list">
+                  {(editor.embed_domains || []).map((host) => (
+                    <li key={host}>
+                      <span>{host}</span>
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() =>
+                          setEditor({
+                            ...editor,
+                            embed_domains: (editor.embed_domains || []).filter((item) => item !== host),
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div className="form-actions">
               <button className="primary" disabled={busy}>

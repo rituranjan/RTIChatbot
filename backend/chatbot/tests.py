@@ -5,7 +5,7 @@ from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import AppSetting, Conversation, Document, Message, MonthlyUsage, UserChatSetting, UserProfile, WebSource
+from .models import AppSetting, Conversation, Document, Message, MonthlyUsage, UserChatSetting, UserProfile, WebRagPage, WebSource
 from .services.admin_settings import not_found_reply, purge_expired_data
 from .services.web_html import html_to_text, links_from_html
 from .services.web_urls import WebUrlError, assert_public_host, normalize_url, site_key
@@ -273,15 +273,16 @@ class PlanLimitTests(TestCase):
             "cached_tokens": 0,
             "website_max_pages": 50,
             "language_enabled": True,
+            "concurrent_users": 10,
             "limit_message": "Basic limit reached.",
         }
         basic.update(overrides)
         extra = {k: v for k, v in basic.items() if k not in ("monthly_requests", "limit_message")}
         return {
             "basic": basic,
-            "silver": {**extra, "monthly_requests": 20, "limit_message": "Silver limit reached.", "website_max_pages": 100},
-            "gold": {**extra, "monthly_requests": 30, "limit_message": "Gold limit reached.", "website_max_pages": 200},
-            "diamond": {**extra, "monthly_requests": 40, "limit_message": "Diamond limit reached.", "website_max_pages": 400},
+            "silver": {**extra, "monthly_requests": 20, "limit_message": "Silver limit reached.", "website_max_pages": 100, "concurrent_users": 20},
+            "gold": {**extra, "monthly_requests": 30, "limit_message": "Gold limit reached.", "website_max_pages": 200, "concurrent_users": 50},
+            "diamond": {**extra, "monthly_requests": 40, "limit_message": "Diamond limit reached.", "website_max_pages": 400, "concurrent_users": 100},
         }
 
     def test_request_limit_blocks_and_user_can_only_pick_plan_models(self):
@@ -600,6 +601,46 @@ class LanguageSettingsTests(TestCase):
         self.assertEqual(website_max_pages_for(user), 25)
         self.assertTrue(language_enabled_for(user))
 
+    def test_website_rag_page_quota(self):
+        from chatbot.services.plan_access import assert_website_rag_quota, website_max_pages_for
+
+        user = User.objects.create_user("ragcap", password="rag-cap-pass")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={
+                "plan_access": {
+                    **PlanLimitTests()._access(website_max_pages=1),
+                }
+            },
+        )
+        self.assertEqual(website_max_pages_for(user), 1)
+        WebRagPage.objects.create(
+            owner=user,
+            url="https://example.com/page",
+        )
+        with self.assertRaises(ValueError):
+            assert_website_rag_quota(user)
+
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"plan_access": PlanLimitTests()._access(website_max_pages=0)},
+        )
+        self.assertEqual(website_max_pages_for(user), 0)
+        assert_website_rag_quota(user)
+
+    def test_extract_urls_from_paste(self):
+        from chatbot.services.web_urls import extract_urls_from_paste
+
+        blob = (
+            "https://varta.astrosage.com/?lang=en#walletmodal"
+            "https://varta.astrosage.com/?lang=en#walletmodal"
+            "https://example.com/a"
+        )
+        urls = extract_urls_from_paste(blob)
+        self.assertEqual(len(urls), 2)
+        self.assertEqual(urls.count("https://varta.astrosage.com/?lang=en"), 1)
+        self.assertIn("https://example.com/a", urls)
+
     def test_validate_user_language_when_required(self):
         from chatbot.services.languages import validate_user_language
 
@@ -655,6 +696,26 @@ class LanguageSettingsTests(TestCase):
             },
         )
         self.assertEqual(resolve_chat_language(user, "hi"), "hi")
+
+    def test_embed_concurrent_cap(self):
+        from chatbot.models import EmbedBot
+        from chatbot.services.embed_concurrency import admit_embed_visitor
+
+        owner = User.objects.create_user("owner", password="owner-pass-123")
+        AppSetting.objects.update_or_create(
+            pk=1,
+            defaults={"plan_access": PlanLimitTests()._access(concurrent_users=2)},
+        )
+        bot = EmbedBot.objects.create(owner=owner, name="Bot")
+        ok, _ = admit_embed_visitor(owner, "visitoraaaaaaaa")
+        self.assertTrue(ok)
+        ok, _ = admit_embed_visitor(owner, "visitorbbbbbbbb")
+        self.assertTrue(ok)
+        ok, msg = admit_embed_visitor(owner, "visitorcccccccc")
+        self.assertFalse(ok)
+        self.assertIn("Too many", msg)
+        ok, _ = admit_embed_visitor(owner, "visitoraaaaaaaa")
+        self.assertTrue(ok)
 
     def test_apply_language_to_system(self):
         from chatbot.services.languages import apply_language_to_system

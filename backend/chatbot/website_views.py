@@ -9,18 +9,17 @@ from .models import WebSource
 from .acting import data_user
 from .permissions import IsMenuAdmin
 from .serializers import WebSourceSerializer
-from .services.plan_access import website_max_pages_for
 from .services.web_crawl import schedule_crawl
 from .services.web_urls import WebUrlError, assert_public_host, normalize_url
 from .services.web_vectors import delete_website
 
 
-def _max_pages(value, default, cap):
+def _max_pages(value, default=300):
     try:
         number = int(value)
     except (TypeError, ValueError):
         number = default
-    return max(1, min(number, cap))
+    return max(1, min(number, 400))
 
 
 def _public_url(value):
@@ -44,13 +43,12 @@ class WebSourceViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         name = str(request.data.get("name") or "").strip()[:200] or urlsplit(url).hostname
         owner = data_user(request)
-        cap = website_max_pages_for(owner)
         source = WebSource.objects.create(
             owner=owner,
             name=name,
             url=url,
             enabled=_enabled(request.data, True),
-            max_pages=_max_pages(request.data.get("max_pages"), min(300, cap), cap),
+            max_pages=_max_pages(request.data.get("max_pages"), 300),
         )
         schedule_crawl(source.id)
         source.refresh_from_db()
@@ -72,8 +70,7 @@ class WebSourceViewSet(viewsets.ModelViewSet):
         if "enabled" in request.data:
             source.enabled = _enabled(request.data, source.enabled)
         if "max_pages" in request.data:
-            cap = website_max_pages_for(source.owner)
-            source.max_pages = _max_pages(request.data.get("max_pages"), source.max_pages, cap)
+            source.max_pages = _max_pages(request.data.get("max_pages"), source.max_pages)
         source.save()
         if recrawl:
             schedule_crawl(source.id)

@@ -31,6 +31,13 @@ class Conversation(models.Model):
             models.Index(fields=["owner", "-updated_at"], name="chatbot_con_owner_i_b82d5f_idx"),
             models.Index(fields=["embed_bot", "visitor_id"], name="chatbot_con_embed_b_6a0c1d_idx"),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["embed_bot", "visitor_id"],
+                condition=models.Q(embed_bot__isnull=False) & ~models.Q(visitor_id=""),
+                name="chatbot_embed_visitor_unique",
+            ),
+        ]
 
 
 class Message(models.Model):
@@ -186,6 +193,57 @@ class EmbedBot(models.Model):
         ordering = ["name"]
 
 
+class EmbedVisitorSession(models.Model):
+    """Tracks active embed visitors for per-plan concurrent user limits (default DB)."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="embed_sessions",
+    )
+    visitor_id = models.CharField(max_length=64)
+    embed_bot = models.ForeignKey(
+        EmbedBot,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="visitor_sessions",
+    )
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "visitor_id"],
+                name="chatbot_embed_session_owner_visitor",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["owner", "-last_seen"], name="chatbot_embed_sess_seen_idx"),
+        ]
+
+
+class EmbedAllowedDomain(models.Model):
+    """Hostnames allowed to embed the widget (parent page origin)."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="embed_domains",
+    )
+    host = models.CharField(max_length=253)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "host"],
+                name="chatbot_embed_domain_owner_host",
+            ),
+        ]
+        ordering = ["host"]
+
+
 class DataConnection(models.Model):
     """A database the owner connects with a connection string. The chatbot reads it."""
 
@@ -321,7 +379,47 @@ class WebPage(models.Model):
     class Meta:
         ordering = ["url"]
         constraints = [
-            models.UniqueConstraint(fields=["source", "url"], name="chatbot_webpage_source_url")
+            models.UniqueConstraint(fields=["source", "url"], name="chatbot_webpage_source_url"),
+        ]
+
+
+class WebRagPage(models.Model):
+    """A single public page indexed for RAG (paste URL list), separate from full-site crawls."""
+
+    STATUS_PENDING = "pending"
+    STATUS_CRAWLING = "crawling"
+    STATUS_READY = "ready"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "pending"),
+        (STATUS_CRAWLING, "crawling"),
+        (STATUS_READY, "ready"),
+        (STATUS_FAILED, "failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="web_rag_pages"
+    )
+    url = models.URLField(max_length=500)
+    title = models.CharField(max_length=300, blank=True, default="")
+    enabled = models.BooleanField(default=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    error = models.TextField(blank=True)
+    message = models.CharField(max_length=300, blank=True, default="")
+    chunk_count = models.IntegerField(default=0)
+    priority = models.IntegerField(default=100)
+    index_token = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["owner", "-updated_at"], name="chatbot_ragpage_owner_u_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "url"], name="chatbot_ragpage_owner_url_uniq"),
         ]
 
 
@@ -332,8 +430,10 @@ def default_plan_days():
 def default_plan_access():
     requests = {"basic": 10, "silver": 20, "gold": 30, "diamond": 40}
     labels = {"basic": "Basic", "silver": "Silver", "gold": "Gold", "diamond": "Diamond"}
-    website_pages = {"basic": 50, "silver": 100, "gold": 200, "diamond": 400}
+    website_rag_sites = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
     language_on = {"basic": False, "silver": True, "gold": True, "diamond": True}
+    concurrent = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
+    max_domains = {"basic": 1, "silver": 2, "gold": 5, "diamond": 10}
     return {
         key: {
             "days": 0,
@@ -342,8 +442,10 @@ def default_plan_access():
             "input_tokens": 0,
             "output_tokens": 0,
             "cached_tokens": 0,
-            "website_max_pages": website_pages[key],
+            "website_max_pages": website_rag_sites[key],
             "language_enabled": language_on[key],
+            "concurrent_users": concurrent[key],
+            "max_embed_domains": max_domains[key],
             "limit_message": f"You have reached the {labels[key]} plan limit for this month.",
         }
         for key in requests

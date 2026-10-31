@@ -52,6 +52,7 @@ def upsert_chunks(owner_id, website_id, rows: list[dict]) -> None:
                 "title": row["title"],
                 "chunk_index": row["chunk_index"],
                 "content": row["content"],
+                "priority": int(row.get("priority") or 0),
             },
         )
         for row in rows
@@ -109,6 +110,9 @@ def search_websites(owner_id, vector: list[float], website_ids: list[str], limit
     rows = []
     for point in found.points:
         payload = point.payload or {}
+        base_score = float(point.score or 0)
+        priority = int(payload.get("priority") or 0)
+        score = base_score + (priority / 1000.0)
         rows.append(
             {
                 "website_id": payload.get("website_id") or "",
@@ -116,7 +120,8 @@ def search_websites(owner_id, vector: list[float], website_ids: list[str], limit
                 "url": payload.get("url") or "",
                 "chunk_index": payload.get("chunk_index") or 0,
                 "content": payload.get("content") or "",
-                "score": round(float(point.score or 0), 3),
+                "score": round(score, 3),
             }
         )
+    rows.sort(key=lambda item: item["score"], reverse=True)
     return rows

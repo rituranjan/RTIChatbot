@@ -13,6 +13,7 @@ from .knowledge_views import (
 from .account_views import AccountDetailView, AccountListView, AccountProvisionView, ActAsView
 from .settings_views import AdminPurgeView, AdminSettingsView, MyPlanView, OpenRouterModelsView
 from .website_views import WebSourceViewSet
+from .web_rag_page_views import WebRagPageViewSet
 from .views import (
     ChatView,
     ConversationViewSet,
@@ -37,6 +38,7 @@ router.register("connections", DataConnectionViewSet, basename="connection")
 router.register("sql-queries", SqlKeywordQueryViewSet, basename="sql-query")
 router.register("intake", IntakeQuestionViewSet, basename="intake")
 router.register("websites", WebSourceViewSet, basename="website")
+router.register("web-rag-pages", WebRagPageViewSet, basename="web-rag-page")
 
 urlpatterns = [
     path("auth/register/", RegisterView.as_view()),

@@ -72,8 +72,10 @@ def merged_access(config=None):
             "input_tokens": number("input_tokens", 0),
             "output_tokens": number("output_tokens", 0),
             "cached_tokens": number("cached_tokens", 0),
-            "website_max_pages": max(1, min(400, number("website_max_pages", base.get("website_max_pages", 300), raw))),
+            "website_max_pages": number("website_max_pages", base.get("website_max_pages", 1), raw),
             "language_enabled": language_enabled,
+            "concurrent_users": number("concurrent_users", base.get("concurrent_users", 0), raw),
+            "max_embed_domains": number("max_embed_domains", base.get("max_embed_domains", 0), raw),
             "limit_message": (message or base["limit_message"])[:2000],
         }
     return result
@@ -114,8 +116,10 @@ def clean_plan_access(incoming):
             "input_tokens": _whole(raw.get("input_tokens"), f"{label} input tokens", 100_000_000),
             "output_tokens": _whole(raw.get("output_tokens"), f"{label} output tokens", 100_000_000),
             "cached_tokens": _whole(raw.get("cached_tokens"), f"{label} cached tokens", 100_000_000),
-            "website_max_pages": max(1, min(400, _whole(raw.get("website_max_pages"), f"{label} website page limit", 400))),
+            "website_max_pages": _whole(raw.get("website_max_pages"), f"{label} website RAG page limit", 10_000),
             "language_enabled": bool(raw.get("language_enabled")),
+            "concurrent_users": _whole(raw.get("concurrent_users"), f"{label} concurrent users", 10_000),
+            "max_embed_domains": _whole(raw.get("max_embed_domains"), f"{label} embed domains", 10_000),
             "limit_message": message[:2000],
         }
     return cleaned
@@ -133,12 +137,37 @@ def rules_for(user) -> dict:
 
 
 def website_max_pages_for(user) -> int:
-    cap = int(rules_for(user).get("website_max_pages") or 300)
-    return max(1, min(cap, 400))
+    """Max single pages in the RAG page list for this plan (0 = unlimited)."""
+    return max(0, int(rules_for(user).get("website_max_pages") or 0))
+
+
+def website_rag_page_count(owner) -> int:
+    from ..models import WebRagPage
+
+    return WebRagPage.objects.filter(owner=owner).count()
+
+
+def assert_website_rag_quota(owner, adding: int = 1) -> None:
+    from ..models import WebRagPage
+
+    cap = website_max_pages_for(owner)
+    if cap <= 0:
+        return
+    adding = max(1, int(adding or 1))
+    count = WebRagPage.objects.filter(owner=owner).count()
+    if count + adding > cap:
+        label = "page" if cap == 1 else "pages"
+        raise ValueError(
+            f"Your plan allows {cap} RAG {label}. Remove one or ask an admin to raise the limit."
+        )
 
 
 def language_enabled_for(user) -> bool:
     return bool(rules_for(user).get("language_enabled"))
+
+
+def concurrent_users_for(user) -> int:
+    return max(0, int(rules_for(user).get("concurrent_users") or 0))
 
 
 def chosen_model(user):
@@ -373,6 +402,8 @@ def record_usage(user, usage) -> None:
 def my_plan_payload(user) -> dict:
     from .languages import chosen_language, language_label, language_public_payload
 
+    from .embed_domains import embed_domains_payload, max_embed_domains_for
+
     plan = user_plan(user)
     rules = merged_access()[plan]
     usage = current_usage(user)
@@ -395,6 +426,8 @@ def my_plan_payload(user) -> dict:
             "output_tokens": rules["output_tokens"],
             "cached_tokens": rules["cached_tokens"],
             "website_max_pages": website_max_pages_for(user),
+            "concurrent_users": concurrent_users_for(user),
+            "max_embed_domains": max_embed_domains_for(user),
             "input_tokens_scope": "per_request",
             "output_tokens_scope": "per_request",
         },
@@ -406,6 +439,7 @@ def my_plan_payload(user) -> dict:
         },
         "limit_message": rules["limit_message"],
         "month": f"{usage.year}-{usage.month:02d}",
+        **embed_domains_payload(user),
     }
 
 

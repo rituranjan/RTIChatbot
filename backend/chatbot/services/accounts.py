@@ -12,8 +12,10 @@ PLAN_LABELS = dict(UserProfile.PLAN_CHOICES)
 
 
 def serialize_account(user, profile, not_found_message="", viewer=None) -> dict:
+    from .embed_domains import embed_domains_payload
+
     plan = profile.plan if profile else ""
-    return {
+    row = {
         "id": user.id,
         "username": user.username,
         "email": user.email,
@@ -27,6 +29,8 @@ def serialize_account(user, profile, not_found_message="", viewer=None) -> dict:
         "is_menu_admin": is_menu_admin(user),
         "can_delete": bool(viewer is not None and user.id != viewer.id and not is_menu_admin(user)),
     }
+    row.update(embed_domains_payload(user))
+    return row
 
 
 def account_row(user, viewer=None) -> dict:
@@ -93,6 +97,10 @@ def update_account(user, data) -> None:
             )
         else:
             UserChatSetting.objects.filter(user=user).delete()
+    if "embed_domains" in data:
+        from .embed_domains import save_embed_domains
+
+        save_embed_domains(user, data.get("embed_domains"))
 
 
 def delete_account(user) -> None:

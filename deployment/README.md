@@ -47,7 +47,21 @@ bash start.sh
 
 Open http://203.57.85.15:3010 and register. After the HTTPS step below, use the `https://` addresses instead.
 
-`backend/.env` already allows `vm24372508.manageserver.in` and `203.57.85.15` for login. Ollama is expected on the host at port 11434. The container reaches it at `http://host.docker.internal:11434`.
+After you load a **new** backend image (new app migrations), apply them once:
+
+```bash
+cd /root/chatbot
+docker compose exec backend python manage.py migrate --noinput
+docker compose restart backend
+```
+
+Migrations also run when the backend container is recreated from an image whose `entrypoint.sh` includes `migrate`. Check status with:
+
+```bash
+docker compose exec backend python manage.py showmigrations chatbot
+```
+
+`backend/.env` already allows `vm24372508.manageserver.in` and `203.57.85.15` for login.
 
 After editing `backend/.env`:
 

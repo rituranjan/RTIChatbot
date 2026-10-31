@@ -18,6 +18,36 @@ docker compose up -d --build
 
 Then open http://127.0.0.1:3010 and register. The API is on port 8010.
 
+### Database migrations
+
+Migrations run automatically when the backend container starts (`entrypoint.sh` runs `python manage.py migrate`).
+
+After pulling new code, rebuild and restart:
+
+```bash
+docker compose up -d --build
+```
+
+To run migrations manually:
+
+```bash
+docker compose exec backend python manage.py migrate --noinput
+```
+
+On the Ubuntu **deployment** server (after loading a new backend image):
+
+```bash
+cd /root/chatbot
+docker compose exec backend python manage.py migrate --noinput
+docker compose restart backend
+```
+
+Check applied migrations:
+
+```bash
+docker compose exec backend python manage.py showmigrations chatbot
+```
+
 ## Ubuntu server
 
 Build here, then copy the images and the `deployment` folder. On the server, use only that folder (no Windows `C:/` mount).
